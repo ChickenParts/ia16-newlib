@@ -61,6 +61,9 @@ endif
 if HAVE_LIBC_MACHINE_I960
 include %D%/i960/Makefile.inc
 endif
+if HAVE_LIBC_MACHINE_IA16
+include %D%/ia16/Makefile.inc
+endif
 if HAVE_LIBC_MACHINE_IQ2000
 include %D%/iq2000/Makefile.inc
 endif

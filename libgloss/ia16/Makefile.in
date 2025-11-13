@@ -1,0 +1,688 @@
+#
+#
+
+DESTDIR =
+VPATH = @srcdir@ @srcdir@/..
+srcdir = @srcdir@
+objdir = .
+srcroot = $(srcdir)/../..
+objroot = $(objdir)/../..
+mkinstalldirs = $(SHELL) $(srcroot)/mkinstalldirs
+
+prefix = @prefix@
+exec_prefix = @exec_prefix@
+
+host_alias = @host_alias@
+target_alias = @target_alias@
+target = @target@
+
+bindir = @bindir@
+libdir = @libdir@
+tooldir = $(exec_prefix)/$(target_alias)
+
+INSTALL = @INSTALL@
+INSTALL_PROGRAM = @INSTALL_PROGRAM@
+INSTALL_DATA = @INSTALL_DATA@
+
+# Multilib support variables.
+# TOP is used instead of MULTI{BUILD,SRC}TOP.
+MULTIDIRS =
+MULTISUBDIR =
+
+SHELL =	/bin/sh
+
+CC = @CC@
+
+AS = @AS@
+AR = @AR@
+LD = @LD@
+NM = @NM@
+RANLIB = @RANLIB@
+
+# Yuk.
+OBJCOPY = $(subst ranlib,objcopy,$(RANLIB))
+
+ELKS_SYS_OBJS =	fork.o read.o write.o open.o close.o wait4.o link.o \
+		unlink.o execve.o chdir.o mknod.o chmod.o chown.o brk.o \
+		stat.o lseek.o getpid.o mount.o umount.o setuid.o getuid.o \
+		fstat.o utime.o chroot.o vfork.o access.o sync.o kill.o \
+		rename.o mkdir.o rmdir.o dup.o pipe.o dup2.o setgid.o \
+		signal.o fcntl.o ioctl.o reboot.o lstat.o symlink.o \
+		readlink.o umask.o settimeofday.o gettimeofday.o select.o \
+		readdir.o fchown.o dlload.o setsid.o socket.o bind.o \
+		listen.o accept.o connect.o knlvsn.o
+ELKS_LIB_OBJS	= elks-abort.o elks-isatty.o elks-sbrk.o
+ELKS_CFLAGS	= $(CFLAGS) -melks
+ELKS_SCRIPTS	= elk-mt.ld elk-mts.ld elk-mtl.ld elk-mtsl.ld \
+		  elk-ms.ld elk-mss.ld elk-msl.ld elk-mssl.ld
+ELKS_BSP	= libelks.a
+ELKS_CRT0	= elks-crt0.o
+
+DOS_COMMON_OBJS = dos-access.o dos-chdir.o dos-chmod.o dos-closer.o \
+		  dos-cvt-file-time.o dos-dbcs.o dos-dbcs-strcspn.o \
+		  dos-dup.o dos-dup2.o dos-environ.o dos-argv.o \
+		  dos-fstatr.o dos-getcwd.o \
+		  dos-getcwd-impl.o dos-gettimeofdayr.o dos-heaplen.o \
+		  dos-isattyr.o dos-lseekr.o dos-mkdir.o dos-mkdirr.o \
+		  dos-near-data-segment.o dos-openr.o dos-psp.o \
+		  dos-readr.o dos-realpath.o dos-renamer.o dos-rmdir.o \
+		  dos-sbrkr.o dos-statr.o dos-timesr.o dos-uname.o \
+		  dos-uname-impl.o dos-unlinkr.o dos-usleep.o dos-writer.o
+PROTECTED_MODE_P = $(filter -mprotected-mode -mdpmi% -mdosx -melks%, \
+			    $(CC) $(CFLAGS) $(MULTILIB))
+CMODEL_MEDIUM_P = $(filter -mcmodel=medium,$(CC) $(CFLAGS) $(MULTILIB))
+CMODEL_NOT_MEDIUM_P = $(if $(CMODEL_MEDIUM_P),,!)
+DOS_COMMON_OBJS += $(if $(PROTECTED_MODE_P), \
+			dx-abort.o dx-tb.o dx-dbcs-weaks.o dx-dpmi16.o, \
+			dos-getpid.o dos-dbcs-weaks.o)
+DOS_COMMON_OBJS += $(ELIX_3_OBJS)
+
+DOS_TINY_OBJS	= $(DOS_COMMON_OBJS)
+DOS_TINY_OBJS	+= $(if $(PROTECTED_MODE_P),,dos-mtabort.o) \
+		   dos-mti0.o dos-mti1.o dos-mtv1.o
+DOS_TINY_CFLAGS	= -mseparate-code-segment -g -Os
+DOS_TINY_ASFLAGS =
+DOS_TINY_SCRIPTS = dos-com.ld dos-mt.ld dos-mts.ld dos-mtl.ld dos-mtsl.ld \
+			      dtr-mt.ld dtr-mts.ld dtr-mtl.ld dtr-mtsl.ld
+DOS_TINY_BSP	= libdos-t.a
+DOS_TINY_CRT0	= dos-t-c0.o
+DOS_TSR_TINY_CRT0 = dtr-t-c0.o
+
+DOS_SMALL_OBJS	= $(DOS_COMMON_OBJS)
+DOS_SMALL_OBJS	+= $(if $(PROTECTED_MODE_P),,dos-msmmabort.o) \
+		   dos-mxi0.o dos-mxi1.o dos-mxv1.o
+DOS_SMALL_CFLAGS = $(DOS_TINY_CFLAGS)
+DOS_SMALL_ASFLAGS = $(DOS_TINY_ASFLAGS)
+DOS_SMALL_SCRIPTS = dos-exe-small.ld dos-ms.ld dos-mss.ld dos-msl.ld \
+		    dos-mssl.ld
+DOS_SMALL_BSP	= libdos-s.a
+DOS_SMALL_CRT0	= dos-s-c0.o
+
+DOS_MEDIUM_OBJS	= $(DOS_COMMON_OBJS)
+DOS_MEDIUM_OBJS	+= dos-msmmabort.o dos-mxv1.o
+DOS_MEDIUM_CFLAGS = -mcmodel=medium $(DOS_TINY_CFLAGS)
+DOS_MEDIUM_ASFLAGS = -mcmodel=medium $(DOS_TINY_ASFLAGS)
+DOS_MEDIUM_SCRIPTS = dos-mm.ld dos-mms.ld dos-mml.ld dos-mmsl.ld
+DOS_MEDIUM_BSP	= libdos-m.a
+DOS_MEDIUM_CRT0	= dos-m-c0.o
+
+DOSX_SMALL_SCRIPTS = dx-ms.ld dx-s-c0.a dx-s-lc.a
+DOSX_SMALL_CRT0 = dx-s-c0.o
+
+# This is a hack to allow us to build Newlib's nano formatted I/O functions
+# as a separate "board support package", so that we do not have to build the
+# whole of Newlib twice over with --enable-newlib-nano-formatted-io and
+# without...  -- tkchia 20190201
+NANO_STDIO_OBJS = nano-vfprintf.o nano-vfprintf_i.o nano-vfprintf_float.o \
+		  nano-vfscanf.o nano-vfscanf_i.o nano-vfscanf_float.o \
+		  nano-svfprintf.o nano-svfscanf.o \
+		  nano-dprintf.o nano-vdprintf.o nano-sprintf.o \
+		  nano-fprintf.o nano-printf.o nano-snprintf.o \
+		  nano-asprintf.o nano-asnprintf.o nano-vprintf.o \
+		  nano-vsprintf.o nano-vsnprintf.o nano-vasprintf.o \
+		  nano-vasnprintf.o nano-sscanf.o nano-fscanf.o nano-scanf.o \
+		  nano-vscanf.o nano-vsscanf.o
+NANO_STDIO_BSP	= libnstdio.a
+AUTOFLOAT_NANO_STDIO_OBJS = an-printf.o an-scanf.o
+AUTOFLOAT_NANO_STDIO_BSP = libanstdio.a
+
+# Another hack, to support a mechanism to detect whether we need floating-point
+# printf (...) and/or scanf (...) support.  -- tkchia 20190407
+IPRINTF_OBJS	= i-dprintf.o i-vdprintf.o i-sprintf.o i-fprintf.o i-printf.o \
+		  i-snprintf.o i-asprintf.o i-asnprintf.o i-vprintf.o \
+		  i-vfprintf.o i-vsprintf.o i-vsnprintf.o i-vasprintf.o \
+		  i-vasnprintf.o i-dprintfr.o i-vdprintfr.o i-sprintfr.o \
+		  i-fprintfr.o i-printfr.o i-snprintfr.o i-asprintfr.o \
+		  i-asnprintf.o i-vprintfr.o i-vfprintfr.o i-vsprintfr.o \
+		  i-vsnprintfr.o i-vasprintfr.o i-vasnprintfr.o
+IPRINTF_BSP	= iprtf-fw.a
+GPRINTF_OBJS	= g-dprintf.o g-vdprintf.o g-sprintf.o g-fprintf.o g-printf.o \
+		  g-snprintf.o g-asprintf.o g-asnprintf.o g-vprintf.o \
+		  g-vfprintf.o g-vsprintf.o g-vsnprintf.o g-vasprintf.o \
+		  g-vasnprintf.o g-dprintfr.o g-vdprintfr.o g-sprintfr.o \
+		  g-fprintfr.o g-printfr.o g-snprintfr.o g-asprintfr.o \
+		  g-asnprintf.o g-vprintfr.o g-vfprintfr.o g-vsprintfr.o \
+		  g-vsnprintfr.o g-vasprintfr.o g-vasnprintfr.o
+GPRINTF_BSP	= gprtf-fw.a
+TPRINTF_OBJS	= t-dprintf.o t-vdprintf.o t-sprintf.o t-fprintf.o t-printf.o \
+		  t-snprintf.o t-asprintf.o t-asnprintf.o t-vprintf.o \
+		  t-vfprintf.o t-vsprintf.o t-vsnprintf.o t-vasprintf.o \
+		  t-vasnprintf.o t-dprintfr.o t-vdprintfr.o t-sprintfr.o \
+		  t-fprintfr.o t-printfr.o t-snprintfr.o t-asprintfr.o \
+		  t-asnprintf.o t-vprintfr.o t-vfprintfr.o t-vsprintfr.o \
+		  t-vsnprintfr.o t-vasprintfr.o t-vasnprintfr.o
+TPRINTF_BSP	= tprtf-fw.a
+ISCANF_OBJS	= i-sscanf.o i-fscanf.o i-scanf.o i-vscanf.o i-vfscanf.o \
+		  i-vsscanf.o i-sscanfr.o i-fscanfr.o i-scanfr.o i-vscanfr.o \
+		  i-vfscanfr.o i-vsscanfr.o
+ISCANF_BSP	= iscnf-fw.a
+GSCANF_OBJS	= g-sscanf.o g-fscanf.o g-scanf.o g-vscanf.o g-vfscanf.o \
+		  g-vsscanf.o g-sscanfr.o g-fscanfr.o g-scanfr.o g-vscanfr.o \
+		  g-vfscanfr.o g-vsscanfr.o
+GSCANF_BSP	= gscnf-fw.a
+TSCANF_OBJS	= t-sscanf.o t-fscanf.o t-scanf.o t-vscanf.o t-vfscanf.o \
+		  t-vsscanf.o t-sscanfr.o t-fscanfr.o t-scanfr.o t-vscanfr.o \
+		  t-vfscanfr.o t-vsscanfr.o
+TSCANF_BSP	= tscnf-fw.a
+HELPER_SCRIPTS	= libastdio.a libfstdio.a
+
+# Various other hacks.  build-ia16 normally builds only the EL/IX Level 2
+# routines in the platform-independent portions of Newlib; explicitly add
+# some routines that are only present in EL/IX Level 3 & are relevant for
+# MS-DOS.  -- tkchia 20220529
+ELIX_3_OBJS	= putenv.o putenv_r.o setenv.o setenv_r.o
+HELPER_SCRIPTS	+= libdosv1.a libck086.a libck186.a libdx32.a
+HELPER_SCRIPTS_NONMULTI = rt-specs/r-msdos.spec
+
+ALL_BSP		= $(ELKS_BSP) $(DOS_TINY_BSP) $(DOS_SMALL_BSP) \
+		  $(DOS_MEDIUM_BSP) \
+		  $(NANO_STDIO_BSP) $(AUTOFLOAT_NANO_STDIO_BSP) \
+		  $(IPRINTF_BSP) $(GPRINTF_BSP) $(TPRINTF_BSP) \
+		  $(ISCANF_BSP) $(GSCANF_BSP) $(TSCANF_BSP)
+
+OBJS		= $(if $(CMODEL_MEDIUM_P), \
+		       $(DOS_MEDIUM_OBJS), \
+		       $(sort $(DOS_TINY_OBJS) $(DOS_SMALL_OBJS)))
+CFLAGS_FOR_TARGET += $(if $(CMODEL_MEDIUM_P), \
+			  $(DOS_MEDIUM_CFLAGS), $(DOS_SMALL_CFLAGS))
+ASFLAGS		= $(if $(CMODEL_MEDIUM_P), \
+		       $(DOS_MEDIUM_ASFLAGS), $(DOS_SMALL_ASFLAGS))
+SCRIPTS		= $(if $(CMODEL_MEDIUM_P), \
+		       $(DOS_MEDIUM_SCRIPTS), \
+		       $(sort $(DOS_TINY_SCRIPTS) $(DOS_SMALL_SCRIPTS))) \
+		  $(HELPER_SCRIPTS)
+BSP		= $(if $(CMODEL_MEDIUM_P), \
+		       $(DOS_MEDIUM_BSP), \
+		       $(sort $(DOS_TINY_BSP) $(DOS_SMALL_BSP)))
+CRT0		= $(if $(CMODEL_MEDIUM_P), \
+		       $(DOS_MEDIUM_CRT0), \
+		       $(sort $(DOS_TINY_CRT0) $(DOS_TSR_TINY_CRT0) \
+			      $(DOS_SMALL_CRT0)))
+
+# Host specific makefile fragment comes in here.
+@host_makefile_frag@
+
+# Need to augment the definition from host_makefile_frag above.
+INCLUDES += -I$(srcdir) -I. -I$(srcdir)/.. -I../libnosys
+
+INSTALL_DATA_FILES = \
+  $(BSP) $(CRT0) $(NANO_STDIO_BSP) $(AUTOFLOAT_NANO_STDIO_BSP) \
+  $(IPRINTF_BSP) $(GPRINTF_BSP) $(TPRINTF_BSP) \
+  $(ISCANF_BSP) $(GSCANF_BSP) $(TSCANF_BSP) \
+  $(SCRIPTS)
+INSTALL_DATA_FILES += $(if $(PROTECTED_MODE_P), \
+			   $(if $(CMODEL_NOT_MEDIUM_P), \
+				$(DOSX_SMALL_CRT0) $(DOSX_SMALL_SCRIPTS)))
+INSTALL_DATA_FILES_NONMULTI = $(HELPER_SCRIPTS_NONMULTI)
+INSTALL_PROGRAM_FILES = elf2dosx
+# Building Newlib for the ELKS target is currently disabled.  To properly
+# build Newlib/ELKS, we will probably need to at least add Newlib/ELKS as a
+# multilib combination under GCC, _and_ fix newlib/libc/machine/ia16/sys/
+# errno.h so that it knows about ELKS error codes, _and_ update the ELKS
+# syscall routines to work with REENTRANT_SYSCALLS_PROVIDED.  TODO.
+#	-- tkchia 20211005
+#
+# INSTALL_DATA_FILES += $(if $(PROTECTED_MODE_P), \
+#			     $(if $(CMODEL_NOT_MEDIUM_P), \
+#				  $(ELKS_BSP) $(ELKS_CRT0) $(ELKS_SCRIPTS)))
+
+#
+# build a test program for each target board. Just trying to get
+# it to link is a good test, so we ignore all the errors for now.
+#
+# all: ${MON_CRT0} ${MON_BSP}
+all: $(INSTALL_DATA_FILES) $(INSTALL_DATA_FILES_NONMULTI) \
+     $(INSTALL_PROGRAM_FILES) libnosys.a
+#
+# Here's where we build the board support packages for each target.
+#
+
+# Magic from ../cris/Makefile.in follows:
+# Toplevel build rules for various other libraries have gcc -B options
+# applied so the newlib build directory is reached, but not the target
+# libgloss directory (whose name is unknown to the toplevel configury
+# anyway).  Configury tests that check for a successful link therefore
+# fail; they can't find crt0.o and non-libc.a+libm.a libraries.  We copy
+# over all files we would install to the neighboring newlib directory.
+# Only the default crt0.o and libraries are needed, but we do them all for
+# completeness.  They're however installed from here, not from the newlib
+# build directory.
+$(objroot)/newlib/%: %
+	cp -p $^ $@
+
+# This rule, being more specific, overrides the pattern rule above.
+$(objroot)/newlib/$(DOS_TINY_BSP):
+	ln -s ../libgloss/ia16/$(DOS_TINY_BSP) $(objroot)/newlib
+$(objroot)/newlib/$(DOS_TINY_CRT0):
+	ln -s ../libgloss/ia16/$(DOS_TINY_CRT0) $(objroot)/newlib
+$(objroot)/newlib/$(DOS_SMALL_BSP):
+	ln -s ../libgloss/ia16/$(DOS_SMALL_BSP) $(objroot)/newlib
+$(objroot)/newlib/$(DOS_SMALL_CRT0):
+	ln -s ../libgloss/ia16/$(DOS_SMALL_CRT0) $(objroot)/newlib
+$(objroot)/newlib/$(DOS_MEDIUM_BSP):
+	ln -s ../libgloss/ia16/$(DOS_MEDIUM_BSP) $(objroot)/newlib
+$(objroot)/newlib/$(DOS_MEDIUM_CRT0):
+	ln -s ../libgloss/ia16/$(DOS_MEDIUM_CRT0) $(objroot)/newlib
+$(objroot)/newlib/$(DOS_TSR_TINY_CRT0):
+	ln -s ../libgloss/ia16/$(DOS_TSR_TINY_CRT0) $(objroot)/newlib
+$(objroot)/newlib/$(DOSX_SMALL_CRT0):
+	ln -s ../libgloss/ia16/$(DOSX_SMALL_CRT0) $(objroot)/newlib
+$(objroot)/newlib/$(ELKS_BSP):
+	ln -s ../libgloss/ia16/$(ELKS_BSP) $(objroot)/newlib
+$(objroot)/newlib/$(ELKS_CRT0):
+	ln -s ../libgloss/ia16/$(ELKS_CRT0) $(objroot)/newlib
+$(objroot)/newlib/$(NANO_STDIO_BSP):
+	ln -s ../libgloss/ia16/$(NANO_STDIO_BSP) $(objroot)/newlib
+$(objroot)/newlib/$(AUTOFLOAT_NANO_STDIO_BSP):
+	ln -s ../libgloss/ia16/$(AUTOFLOAT_NANO_STDIO_BSP) $(objroot)/newlib
+$(objroot)/newlib/$(IPRINTF_BSP):
+	ln -s ../libgloss/ia16/$(IPRINTF_BSP) $(objroot)/newlib
+$(objroot)/newlib/$(ISCANF_BSP):
+	ln -s ../libgloss/ia16/$(ISCANF_BSP) $(objroot)/newlib
+
+#
+# Here's where we build the test programs for each target.
+#
+.PHONY: test
+test:	
+	true
+
+#
+#
+#
+NEWLIB_CFLAGS = `if [ -d ${objroot}/newlib ]; then echo -I${objroot}/newlib/targ-include -I${srcroot}/newlib/libc/include; fi`
+CFLAGS_FOR_TARGET += ${MULTILIB} ${INCLUDES} ${NEWLIB_CFLAGS}
+
+.c.o:
+	$(CC) $(CFLAGS_FOR_TARGET) -Os -c $(CFLAGS) -D_COMPILING_NEWLIB $<
+
+nano-vfprintf.o nano-vfprintf_i.o nano-vfprintf_float.o \
+  nano-vfscanf.o nano-vfscanf_i.o nano-vfscanf_float.o : \
+  %.o: $(srcroot)/newlib/libc/stdio/%.c
+	$(CC) $(CFLAGS_FOR_TARGET) -Os -c $(CFLAGS) -D_COMPILING_NEWLIB \
+	  -D_NANO_FORMATTED_IO $< -o $@
+nano-dprintf.o nano-vdprintf.o nano-sprintf.o nano-fprintf.o nano-printf.o \
+  nano-snprintf.o nano-asprintf.o nano-asnprintf.o nano-vprintf.o \
+  nano-vsprintf.o nano-vsnprintf.o nano-vasprintf.o nano-vasnprintf.o \
+  nano-sscanf.o nano-fscanf.o nano-scanf.o nano-vscanf.o nano-vsscanf.o :
+  nano-%.o: $(srcroot)/newlib/libc/stdio/%.c
+	$(CC) $(CFLAGS_FOR_TARGET) -Os -c $(CFLAGS) -D_COMPILING_NEWLIB \
+	  -D_NANO_FORMATTED_IO $< -o $@
+nano-svfprintf.o: $(srcroot)/newlib/libc/stdio/nano-vfprintf.c
+	$(CC) $(CFLAGS_FOR_TARGET) -Os -c $(CFLAGS) -D_COMPILING_NEWLIB \
+	  -D_NANO_FORMATTED_IO -DSTRING_ONLY $< -o $@
+nano-svfscanf.o: $(srcroot)/newlib/libc/stdio/nano-vfscanf.c
+	$(CC) $(CFLAGS_FOR_TARGET) -Os -c $(CFLAGS) -D_COMPILING_NEWLIB \
+	  -D_NANO_FORMATTED_IO -DSTRING_ONLY $< -o $@
+
+$(ELIX_3_OBJS): %.o: $(srcroot)/newlib/libc/stdlib/%.c
+	$(CC) $(CFLAGS_FOR_TARGET) -Os -c $(CFLAGS) -D_COMPILING_NEWLIB \
+	  $< -o $@
+
+elks-isatty.o: $(srcroot)/newlib/libc/posix/_isatty.c
+	$(CC) $(CFLAGS_FOR_TARGET) -Os -c $(CFLAGS) -D_COMPILING_NEWLIB $< \
+	  -o $@
+
+$(ELKS_CRT0) : elks-crt0.S
+	$(CC) $(CFLAGS_FOR_TARGET) \
+	  $(ASFLAGS_FOR_TARGET) $(ASFLAGS) -c $(CFLAGS) $< -o $@
+
+$(ELKS_SYS_OBJS) : elks-syscalls.c elks-syscalls.h
+	$(CC) $(CFLAGS_FOR_TARGET) $(ELKS_CFLAGS) -DLABEL=_$(subst .o,,$@) \
+	-DFUNC=$(subst .o,,$@) -DSYSCALL=__SYSCALL_for_$(subst .o,,$@) \
+	-DSYSCALL_$(subst .o,,$@) $< -c -o $@
+
+$(ELKS_BSP) : $(ELKS_SYS_OBJS) $(ELKS_LIB_OBJS)
+	$(AR) rcs $@ $+
+
+$(DOS_TINY_CRT0) : dos-models-crt0.S
+	$(CC) $(CFLAGS_FOR_TARGET) -DTINY -USMALL -UMEDIUM -UTSR -UDOSX \
+	  $(ASFLAGS_FOR_TARGET) $(ASFLAGS) -c $(CFLAGS) $< -o $@
+
+$(DOS_SMALL_CRT0) : dos-models-crt0.S
+	$(CC) $(CFLAGS_FOR_TARGET) -UTINY -DSMALL -UMEDIUM -UTSR -UDOSX \
+	  $(ASFLAGS_FOR_TARGET) $(ASFLAGS) -c $(CFLAGS) $< -o $@
+
+$(DOS_MEDIUM_CRT0) : dos-models-crt0.S
+	$(CC) $(CFLAGS_FOR_TARGET) -UTINY -USMALL -DMEDIUM -UTSR -UDOSX \
+	  $(ASFLAGS_FOR_TARGET) $(ASFLAGS) -c $(CFLAGS) $< -o $@
+
+$(DOS_TSR_TINY_CRT0) : dos-models-crt0.S
+	$(CC) $(CFLAGS_FOR_TARGET) -DTINY -USMALL -UMEDIUM -DTSR -UDOSX \
+	  $(ASFLAGS_FOR_TARGET) $(ASFLAGS) -c $(CFLAGS) $< -o $@
+
+$(DOSX_SMALL_CRT0) : dos-models-crt0.S
+	$(CC) $(CFLAGS_FOR_TARGET) -UTINY -DSMALL -UTSR -DDOSX \
+	  $(ASFLAGS_FOR_TARGET) $(ASFLAGS) -c $(CFLAGS) $< -o $@
+
+dos-chdir.o: dos-chdir.S call-cvt.h
+dos-closer.o: dos-closer.S call-cvt.h
+dos-getcwd.o: dos-getcwd.S call-cvt.h
+dos-isattyr.o: dos-isattyr.S call-cvt.h
+dos-lseekr.o: dos-lseekr.S call-cvt.h
+dos-mkdir.o: dos-mkdir.S call-cvt.h
+dos-readr.o: dos-readr.S call-cvt.h
+dos-renamer.o: dos-renamer.S call-cvt.h
+dos-rmdir.o: dos-rmdir.S call-cvt.h
+dos-unlinkr.o: dos-unlinkr.S call-cvt.h
+dos-writer.o: dos-writer.S call-cvt.h
+
+# (!) dos-timesr.S uses the division operator.
+dos-timesr.o: override CFLAGS += -Wa,--divide
+dos-timesr.o: dos-timesr.S call-cvt.h
+
+libnosys.a:
+	$(MAKE) -C ../libnosys/ libnosys.a
+	rm -f $@
+	ln -s ../libnosys/libnosys.a $@
+
+$(DOS_TINY_BSP) : $(DOS_TINY_OBJS)
+	$(AR) rcs $@ $+
+
+$(DOS_SMALL_BSP) : $(DOS_SMALL_OBJS)
+	$(AR) rcs $@ $+
+
+$(DOS_MEDIUM_BSP) : $(DOS_MEDIUM_OBJS)
+	$(AR) rcs $@ $+
+
+# When building the nano I/O "BSP", we need to also extract the modules from
+# libc.a that directly or indirectly use the nano I/O routines, and include
+# them in our "BSP".  This is so that calling, say, psignal(, ) will invoke
+# the nano fprintf (...) and not the default one.
+#
+# FIXME: This code makes a number of assumptions, e.g. that libc.a will be
+# built when we reach here, and that the .o file names cannot clash with our
+# BSP modules' names.  -- tkchia 20190201
+$(NANO_STDIO_BSP): $(objroot)/newlib/libc/libc.a $(NANO_STDIO_OBJS)
+	$(AR) rcs $@.1.tmp $(NANO_STDIO_OBJS)
+	set -e; \
+	a="$@.1.tmp"; \
+	while [ -n "$$a" ]; do \
+	  echo '/:$$/ { s/:$$//; h; d }' >$@.2.tmp; \
+	  echo '/:$$/ { s/:$$//; h; d }' >$@.3.tmp; \
+	  $(NM) "$$a" | \
+	    sed -n -e '/ [TRDB] /! d' \
+		   -e 's,.* \([TRDB]\) ,/ \1 ,' \
+		   -e 's,$$,\$$/ { g; p; d },' \
+		   -e p >>$@.2.tmp; \
+	  $(NM) "$$a" | \
+	    sed -n -e '/ [TRDB] /! d' \
+		   -e 's,.* [TRDB] ,/ U ,' \
+		   -e 's,$$,\$$/ { g; p; d },' \
+		   -e p >>$@.3.tmp; \
+	  $(NM) $< | sed -n -f $@.2.tmp | sort | uniq >$@.4.tmp; \
+	  if $(NM) $< | sed -n -f $@.3.tmp | fgrep -v -w -f $@.4.tmp \
+							   >$@.5.tmp; then \
+	    sort $@.5.tmp | uniq >$@.6.tmp; \
+	    xargs $(AR) x $< <$@.6.tmp; \
+	    xargs $(AR) rs $@.1.tmp <$@.6.tmp; \
+	    xargs rm -f <$@.6.tmp; \
+	    a="$<"; \
+	  else \
+	    a=; \
+	  fi; \
+	done
+	mv $@.1.tmp $@
+	rm -f $@.2.tmp $@.3.tmp $@.4.tmp $@.5.tmp $@.6.tmp
+
+$(AUTOFLOAT_NANO_STDIO_BSP): $(AUTOFLOAT_NANO_STDIO_OBJS)
+	$(AR) rcs $@ $+
+
+$(IPRINTF_BSP): $(IPRINTF_OBJS)
+	$(AR) rcs $@ $+
+
+i-printf.o: i-stdio.S
+	$(CC) $(CFLAGS_FOR_TARGET) -DH= -DT=printf -DA=printf \
+	  $(ASFLAGS_FOR_TARGET) $(ASFLAGS) -c $(CFLAGS) $< -o $@
+
+i-%printf.o: i-stdio.S
+	$(CC) $(CFLAGS_FOR_TARGET) -DH=$* -DT=printf -DA=printf \
+	  $(ASFLAGS_FOR_TARGET) $(ASFLAGS) -c $(CFLAGS) $< -o $@
+
+i-printfr.o: i-stdio.S
+	$(CC) $(CFLAGS_FOR_TARGET) -DH=_ -DT=printf_r -DA=printf \
+	  $(ASFLAGS_FOR_TARGET) $(ASFLAGS) -c $(CFLAGS) $< -o $@
+
+i-%printfr.o: i-stdio.S
+	$(CC) $(CFLAGS_FOR_TARGET) -DH=_$* -DT=printf_r -DA=printf \
+	  $(ASFLAGS_FOR_TARGET) $(ASFLAGS) -c $(CFLAGS) $< -o $@
+
+$(GPRINTF_BSP): $(GPRINTF_OBJS)
+	$(AR) rcs $@ $+
+
+g-printf.o: g-stdio.S
+	$(CC) $(CFLAGS_FOR_TARGET) -DH= -DT=printf -DA=printf \
+	  $(ASFLAGS_FOR_TARGET) $(ASFLAGS) -c $(CFLAGS) $< -o $@
+
+g-%printf.o: g-stdio.S
+	$(CC) $(CFLAGS_FOR_TARGET) -DH=$* -DT=printf -DA=printf \
+	  $(ASFLAGS_FOR_TARGET) $(ASFLAGS) -c $(CFLAGS) $< -o $@
+
+g-printfr.o: g-stdio.S
+	$(CC) $(CFLAGS_FOR_TARGET) -DH=_ -DT=printf_r -DA=printf \
+	  $(ASFLAGS_FOR_TARGET) $(ASFLAGS) -c $(CFLAGS) $< -o $@
+
+g-%printfr.o: g-stdio.S
+	$(CC) $(CFLAGS_FOR_TARGET) -DH=_$* -DT=printf_r -DA=printf \
+	  $(ASFLAGS_FOR_TARGET) $(ASFLAGS) -c $(CFLAGS) $< -o $@
+
+$(TPRINTF_BSP): $(TPRINTF_OBJS)
+	$(AR) rcs $@ $+
+
+t-printf.o: t-stdio.S
+	$(CC) $(CFLAGS_FOR_TARGET) -DH= -DT=printf -DA=printf \
+	  $(ASFLAGS_FOR_TARGET) $(ASFLAGS) -c $(CFLAGS) $< -o $@
+
+t-%printf.o: t-stdio.S
+	$(CC) $(CFLAGS_FOR_TARGET) -DH=$* -DT=printf -DA=printf \
+	  $(ASFLAGS_FOR_TARGET) $(ASFLAGS) -c $(CFLAGS) $< -o $@
+
+t-printfr.o: t-stdio.S
+	$(CC) $(CFLAGS_FOR_TARGET) -DH=_ -DT=printf_r -DA=printf \
+	  $(ASFLAGS_FOR_TARGET) $(ASFLAGS) -c $(CFLAGS) $< -o $@
+
+t-%printfr.o: t-stdio.S
+	$(CC) $(CFLAGS_FOR_TARGET) -DH=_$* -DT=printf_r -DA=printf \
+	  $(ASFLAGS_FOR_TARGET) $(ASFLAGS) -c $(CFLAGS) $< -o $@
+
+$(ISCANF_BSP): $(ISCANF_OBJS)
+	$(AR) rcs $@ $+
+
+i-scanf.o: i-stdio.S
+	$(CC) $(CFLAGS_FOR_TARGET) -DH= -DT=scanf -DA=scanf \
+	  $(ASFLAGS_FOR_TARGET) $(ASFLAGS) -c $(CFLAGS) $< -o $@
+
+i-%scanf.o: i-stdio.S
+	$(CC) $(CFLAGS_FOR_TARGET) -DH=$* -DT=scanf -DA=scanf \
+	  $(ASFLAGS_FOR_TARGET) $(ASFLAGS) -c $(CFLAGS) $< -o $@
+
+i-scanfr.o: i-stdio.S
+	$(CC) $(CFLAGS_FOR_TARGET) -DH=_ -DT=scanf_r -DA=scanf \
+	  $(ASFLAGS_FOR_TARGET) $(ASFLAGS) -c $(CFLAGS) $< -o $@
+
+i-%scanfr.o: i-stdio.S
+	$(CC) $(CFLAGS_FOR_TARGET) -DH=_$* -DT=scanf_r -DA=scanf \
+	  $(ASFLAGS_FOR_TARGET) $(ASFLAGS) -c $(CFLAGS) $< -o $@
+
+$(GSCANF_BSP): $(GSCANF_OBJS)
+	$(AR) rcs $@ $+
+
+g-scanf.o: g-stdio.S
+	$(CC) $(CFLAGS_FOR_TARGET) -DH= -DT=scanf -DA=scanf \
+	  $(ASFLAGS_FOR_TARGET) $(ASFLAGS) -c $(CFLAGS) $< -o $@
+
+g-%scanf.o: g-stdio.S
+	$(CC) $(CFLAGS_FOR_TARGET) -DH=$* -DT=scanf -DA=scanf \
+	  $(ASFLAGS_FOR_TARGET) $(ASFLAGS) -c $(CFLAGS) $< -o $@
+
+g-scanfr.o: g-stdio.S
+	$(CC) $(CFLAGS_FOR_TARGET) -DH=_ -DT=scanf_r -DA=scanf \
+	  $(ASFLAGS_FOR_TARGET) $(ASFLAGS) -c $(CFLAGS) $< -o $@
+
+g-%scanfr.o: g-stdio.S
+	$(CC) $(CFLAGS_FOR_TARGET) -DH=_$* -DT=scanf_r -DA=scanf \
+	  $(ASFLAGS_FOR_TARGET) $(ASFLAGS) -c $(CFLAGS) $< -o $@
+
+$(TSCANF_BSP): $(TSCANF_OBJS)
+	$(AR) rcs $@ $+
+
+t-scanf.o: t-stdio.S
+	$(CC) $(CFLAGS_FOR_TARGET) -DH= -DT=scanf -DA=scanf \
+	  $(ASFLAGS_FOR_TARGET) $(ASFLAGS) -c $(CFLAGS) $< -o $@
+
+t-%scanf.o: t-stdio.S
+	$(CC) $(CFLAGS_FOR_TARGET) -DH=$* -DT=scanf -DA=scanf \
+	  $(ASFLAGS_FOR_TARGET) $(ASFLAGS) -c $(CFLAGS) $< -o $@
+
+t-scanfr.o: t-stdio.S
+	$(CC) $(CFLAGS_FOR_TARGET) -DH=_ -DT=scanf_r -DA=scanf \
+	  $(ASFLAGS_FOR_TARGET) $(ASFLAGS) -c $(CFLAGS) $< -o $@
+
+t-%scanfr.o: t-stdio.S
+	$(CC) $(CFLAGS_FOR_TARGET) -DH=_$* -DT=scanf_r -DA=scanf \
+	  $(ASFLAGS_FOR_TARGET) $(ASFLAGS) -c $(CFLAGS) $< -o $@
+
+.c.S:
+	${CC} ${CFLAGS_FOR_TARGET} -c $<
+
+GEN_LD_SCRIPT = \
+  CC='$(CC)' CFLAGS='$(CFLAGS) $(CFLAGS_FOR_TARGET)' \
+    multidir='$(DESTDIR)$(tooldir)/lib$(MULTISUBDIR)' $(SHELL) $<
+
+# dos-com.ld and dos-exe-small.ld are "older" names for dos-mtsl.ld and
+# dos-mssl.ld which I am keeping around for backward compatibility.  -- tkchia
+
+dos-mt.ld: dos-mt.ld.in autofloat.ld.in
+	$(GEN_LD_SCRIPT) -nostdlib >$@
+
+dos-mts.ld: dos-mt.ld.in autofloat.ld.in
+	$(GEN_LD_SCRIPT) -nodefaultlibs >$@
+
+dos-mtl.ld: dos-mt.ld.in autofloat.ld.in
+	$(GEN_LD_SCRIPT) -nostartfiles >$@
+
+dos-mtsl.ld dos-com.ld: dos-mt.ld.in autofloat.ld.in
+	$(GEN_LD_SCRIPT) >$@
+
+dos-ms.ld: dos-mx.ld.in autofloat.ld.in
+	$(GEN_LD_SCRIPT) -nostdlib >$@
+
+dos-mss.ld: dos-mx.ld.in autofloat.ld.in
+	$(GEN_LD_SCRIPT) -nodefaultlibs >$@
+
+dos-msl.ld: dos-mx.ld.in autofloat.ld.in
+	$(GEN_LD_SCRIPT) -nostartfiles >$@
+
+dos-mssl.ld dos-exe-small.ld: dos-mx.ld.in autofloat.ld.in
+	$(GEN_LD_SCRIPT) >$@
+
+dos-mm.ld: dos-mx.ld.in autofloat.ld.in
+	$(GEN_LD_SCRIPT) -mcmodel=medium -nostdlib >$@
+
+dos-mms.ld: dos-mx.ld.in autofloat.ld.in
+	$(GEN_LD_SCRIPT) -mcmodel=medium -nodefaultlibs >$@
+
+dos-mml.ld: dos-mx.ld.in autofloat.ld.in
+	$(GEN_LD_SCRIPT) -mcmodel=medium -nostartfiles >$@
+
+dos-mmsl.ld: dos-mx.ld.in autofloat.ld.in
+	$(GEN_LD_SCRIPT) -mcmodel=medium >$@
+
+dtr-mt.ld: dtr-mt.ld.in autofloat.ld.in
+	$(GEN_LD_SCRIPT) -nostdlib >$@
+
+dtr-mts.ld: dtr-mt.ld.in autofloat.ld.in
+	$(GEN_LD_SCRIPT) -nodefaultlibs >$@
+
+dtr-mtl.ld: dtr-mt.ld.in autofloat.ld.in
+	$(GEN_LD_SCRIPT) -nostartfiles >$@
+
+dtr-mtsl.ld: dtr-mt.ld.in autofloat.ld.in
+	$(GEN_LD_SCRIPT) >$@
+
+dx-mt.ld: dx-mt.ld.in autofloat.ld.in
+	$(GEN_LD_SCRIPT) -nostdlib >$@
+
+dx-mts.ld: dx-mt.ld.in autofloat.ld.in
+	$(GEN_LD_SCRIPT) -nodefaultlibs >$@
+
+dx-mtl.ld: dx-mt.ld.in autofloat.ld.in
+	$(GEN_LD_SCRIPT) -nostartfiles >$@
+
+dx-mtsl.ld: dx-mt.ld.in autofloat.ld.in
+	$(GEN_LD_SCRIPT) >$@
+
+dx-ms.ld: dx-ms.ld.in autofloat.ld.in
+	$(GEN_LD_SCRIPT) >$@
+
+elk-mt.ld: elk-mt.ld.in
+	$(GEN_LD_SCRIPT) -nostdlib >$@
+
+elk-mts.ld: elk-mt.ld.in
+	$(GEN_LD_SCRIPT) -nodefaultlibs >$@
+
+elk-mtl.ld: elk-mt.ld.in
+	$(GEN_LD_SCRIPT) -nostartfiles >$@
+
+elk-mtsl.ld: elk-mt.ld.in
+	$(GEN_LD_SCRIPT) >$@
+
+elk-ms.ld: elk-ms.ld.in
+	$(GEN_LD_SCRIPT) -nostdlib >$@
+
+elk-mss.ld: elk-ms.ld.in
+	$(GEN_LD_SCRIPT) -nodefaultlibs >$@
+
+elk-msl.ld: elk-ms.ld.in
+	$(GEN_LD_SCRIPT) -nostartfiles >$@
+
+elk-mssl.ld: elk-ms.ld.in
+	$(GEN_LD_SCRIPT) >$@
+
+clean mostlyclean:
+	rm -f a.out core *.i *.o *-test *.srec *.dis *.x *.hex dos-*.ld \
+	  $(ALL_BSP)
+
+distclean maintainer-clean realclean: clean
+	rm -f Makefile config.status *~
+
+.PHONY: install info install-info clean-info
+install: 
+	$(mkinstalldirs) $(DESTDIR)${tooldir}/lib${MULTISUBDIR} \
+			 $(DESTDIR)${tooldir}/bin
+	set -e; for x in ${INSTALL_DATA_FILES}; do\
+	  if [ -f $$x ]; then \
+	    ${INSTALL_DATA} $$x $(DESTDIR)${tooldir}/lib${MULTISUBDIR}/$$x; \
+	  else \
+	    ${INSTALL_DATA} $(srcdir)/$$x $(DESTDIR)${tooldir}/lib${MULTISUBDIR}/$$x; \
+	  fi; \
+	done
+	if [ -z "${MULTISUBDIR}" ]; then \
+	  set -e; $(mkinstalldirs) $(sort $(dir \
+	    ${INSTALL_DATA_FILES_NONMULTI:%=$(DESTDIR)${tooldir}/lib/%})); \
+	  set -e; for x in ${INSTALL_DATA_FILES_NONMULTI}; do\
+	    if [ -f $$x ]; then \
+	      ${INSTALL_DATA} $$x $(DESTDIR)${tooldir}/lib/$$x; \
+	    else \
+	      ${INSTALL_DATA} $(srcdir)/$$x $(DESTDIR)${tooldir}/lib/$$x; \
+	    fi; \
+	  done; \
+	  set -e; for x in ${INSTALL_PROGRAM_FILES}; do\
+	    if [ -f $$x ]; then \
+	      ${INSTALL_PROGRAM} $$x $(DESTDIR)${tooldir}/bin/$$x; \
+	    else \
+	      ${INSTALL_PROGRAM} $(srcdir)/$$x $(DESTDIR)${tooldir}/bin/$$x; \
+	    fi; \
+	  done; \
+	fi
+
+doc:
+info:
+install-info:
+clean-info:
+
+Makefile: Makefile.in config.status @host_makefile_frag_path@
+	$(SHELL) config.status
+
+config.status: configure
+	$(SHELL) config.status --recheck

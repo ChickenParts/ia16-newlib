@@ -199,12 +199,16 @@ case "${host_cpu}" in
 	shared_machine_dir=shared_x86
 	# Don't use for these since they provide their own setjmp.
 	case ${host} in
-	*-*-sco* | *-*-cygwin*) 
+	*-*-sco* | *-*-cygwin*)
 		;;
-	*) 
+	*)
 		mach_add_setjmp=true
 		;;
 	esac
+	;;
+  ia16)
+	machine_dir=ia16
+	newlib_cflags="${newlib_cflags} -DREENTRANT_SYSCALLS_PROVIDED -DHAVE_RENAME -Os -DPREFER_SIZE_OVER_SPEED"
 	;;
   ia64*)
 	;;
@@ -740,6 +744,11 @@ newlib_cflags="${newlib_cflags} -DCLOCK_PROVIDED -DMALLOC_PROVIDED -DEXIT_PROVID
 		syscall_dir=syscalls
 		newlib_cflags="${newlib_cflags} -D__DYNAMIC_REENT__"
 	fi
+	;;
+  ia16-*-*)
+	syscall_dir=syscalls
+	default_newlib_io_long_long="yes"
+	newlib_cflags="${newlib_cflags} -D_COMPILING_NEWLIB"
 	;;
   iq2000*)
 	syscall_dir=syscalls

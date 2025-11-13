@@ -1,0 +1,141 @@
+#!/bin/sh
+
+set -e
+cmd1='#'
+cmd2='#'
+w1=with
+w2=with
+w3=without
+crt0=-l:dos-t-c0.o
+while [ $# -gt 0 ]; do
+  case "$1" in
+    -nostdlib)
+      cmd1='/^@if_starts@/,/^@endif@/ d'
+      cmd2='/^@if_libs@/,/^@endif@/ d'
+      w1=without
+      w2=without;;
+    -nostartfiles)
+       cmd1='/^@if_starts@/,/^@endif@/ d'
+       w1=without;;
+    -nodefaultlibs)
+       cmd2='/^@if_libs@/,/^@endif@/ d'
+       w2=without;;
+    -mdpmiable)
+       crt0=-l:dpm-t-c0.o
+       w3=with;;
+  esac
+  shift
+done
+sed -e "$cmd1" -e "$cmd2" -e "s;@crt0@;$crt0;g" \
+    -e "s;@withstarts@;$w1;g" -e "s;@withlibs@;$w2;g" \
+    -e "s;@withdpmiable@;$w3;g" \
+    -e "s/@self@/`basename "$0"`/g" -e "/^@if/ d" -e "/^@endif@/ d" <<'EPART1'
+/* Linker script for DOS executables with combined data and text segment,
+   @withstarts@ startup files, @withlibs@ default libraries, and @withdpmiable@
+   DPMI support.
+
+   Generated from @self@.  */
+
+OUTPUT_FORMAT(binary)
+ENTRY(_start)
+@if_starts@
+INPUT(-l:crtbegin.o -l:crtend.o @crt0@)
+@endif@
+@if_libs@
+GROUP(-lc -lgcc -ldos-t -lm)
+@endif@
+
+SECTIONS
+  {
+    . = SEGMENT_START ("text-segment", 0x100);
+    /* Target text sections.  */
+    .text : {
+		__stext = .;
+		*(.startupA)
+		*(.head) *(.head.*)
+		*(.startupB)
+		*(.startupC)
+		*(.msdos_init) *(.msdos_init.*)
+		*(.msdos_initA) *(.msdos_initA.*)
+		*(.startupD)
+		*(.msdos_initB) *(.msdos_initB.*)
+		*(.startupE)
+		*(.preinit) *(.preinit.*)
+		*(.init)
+		*(.startupF)
+		*(.exitA)
+		*(.fini)
+		*(.exitB)
+		*(.text) *(.text.*)
+		__etext = .;
+	}
+	__ltext = __etext - __stext;
+
+    /* Target data sections.  */
+    .data : {
+		__sdata = .;
+
+		/* Build lists of constructors and destructors.  */
+		KEEP (*crtbegin*.o(.ctors))
+		KEEP (*(EXCLUDE_FILE (*crtend*.o ) .ctors))
+		KEEP (*(SORT(.ctors.*)))
+		KEEP (*(.ctors))
+
+		KEEP (*crtbegin*.o(.dtors))
+		KEEP (*(EXCLUDE_FILE (*crtend*.o ) .dtors))
+		KEEP (*(SORT(.dtors.*)))
+		KEEP (*(.dtors))
+
+		*(.msdos_init_rodata) *(.msdos_init_rodata.*)
+		*(.rodata) *(.rodata.*)
+EPART1
+"`dirname "$0"`"/autofloat.ld.in
+cat <<'EPART2'
+		*(.data) *(.data.*)
+		*(.gcc_except_table)
+		__edata = .;
+	}
+
+    .bss (NOLOAD) : {
+		 __sbss = .;
+                *(.bss) *(.bss.*)
+                *(COMMON)
+                __ebss = .;
+
+                /* Minimum address allowed for sbrk() to use.  */
+                __heap_end_minimum = ALIGN(8);
+	}
+
+	__ldata = __edata - __sdata;
+	__lbss0 = __ebss - __sbss;
+	__lbss1 = __lbss0 + 1;
+	__lbss = __lbss1 / 2;
+
+    ASSERT(. <= 0xfd00, "Error: too large for a .com file.")
+
+    /* Used by the memory resizing and DPMI initialization code in
+       dos-models-crt0.S.  */
+    __msdos_initial_alloc_paras = 0x1000;
+
+    /* Any ancillary trailer payload (not part of .com proper). */
+    .tail 0 : AT (LOADADDR (.data) + SIZEOF (.data)) {
+		KEEP (*(.tail))
+		KEEP (*(SORT (.tail.*)))
+		KEEP (*(.zip))
+		KEEP (*(SORT (.zip.*)))
+EPART2
+for x in '' 0 1 2 3 4 5 6 7; do
+    cat <<EPART3
+		KEEP (*(.ov$x))
+		KEEP (*(SORT (.ov$x.*)))
+EPART3
+done
+cat <<'EPART4'
+	}
+
+    ASSERT(LOADADDR (.tail) + SIZEOF (.tail) <= 0xfd00,
+	   "Error: too large for a .com file.")
+
+    /DISCARD/ : { *(.*) }
+  }
+EPART4

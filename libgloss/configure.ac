@@ -92,6 +92,10 @@ case "${target}" in
   i960-*-coff)
 	config_i960=true
 	;;
+  ia16-*-*)
+	AC_CONFIG_FILES([ia16/Makefile])
+	subdirs="$subdirs ia16"
+	;;
   sparc-*leon*-elf* | sparc-*leon*-none*)
 	config_sparc_leon=true
 	;;
