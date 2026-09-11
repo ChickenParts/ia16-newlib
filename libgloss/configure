@@ -2850,6 +2850,11 @@ case "${target}" in
 
 	subdirs="$subdirs m68hc11"
 	;;
+  ia16-*-*)
+	ac_config_files="$ac_config_files ia16/Makefile"
+
+	subdirs="$subdirs ia16"
+	;;
   nds32*-*-*)
 	config_nds32=true
 	;;
@@ -6636,6 +6641,7 @@ do
   case $ac_config_target in
     "config.h") CONFIG_HEADERS="$CONFIG_HEADERS config.h" ;;
     "m68hc11/Makefile") CONFIG_FILES="$CONFIG_FILES m68hc11/Makefile" ;;
+    "ia16/Makefile") CONFIG_FILES="$CONFIG_FILES ia16/Makefile" ;;
     "m68k/Makefile") CONFIG_FILES="$CONFIG_FILES m68k/Makefile" ;;
     "pa/Makefile") CONFIG_FILES="$CONFIG_FILES pa/Makefile" ;;
     "mips/Makefile") CONFIG_FILES="$CONFIG_FILES mips/Makefile" ;;
