@@ -16,12 +16,12 @@ extern "C" {
 
 #ifndef _REENT_ONLY
 #define errno (*__errno())
-extern int *__errno _PARAMS ((void));
+extern int *__errno (void);
 #endif
 
 /* Please don't use these variables directly.
    Use strerror instead. */
-extern _CONST char * _CONST _sys_errlist[];
+extern const char * const _sys_errlist[];
 extern int _sys_nerr;
 
 #define __errno_r(ptr) ((ptr)->_errno)
@@ -88,6 +88,7 @@ extern int _sys_nerr;
 #define ENAMETOOLONG	0x120	/* File or path name too long */
 #define ELOOP		0x121	/* Too many symbolic links */
 #define EOPNOTSUPP	0x122	/* Operation not supported on socket */
+#define ENOTSUP	EOPNOTSUPP	/* Operation not supported */
 #define ECONNRESET	0x123	/* Connection reset by peer */
 #define ENOBUFS		0x124	/* No buffer space available */
 #define EAFNOSUPPORT	0x125	/* Address family not supported by protocol family */
