@@ -17,6 +17,15 @@
 #include <machine/ieeefp.h>
 #include "math_config.h"
 
+/* IA16 exposes the memory-model qualifier through the historical `huge'
+   spelling.  The fdlibm sources use `huge' as an ordinary local identifier;
+   hide the compiler convenience macro while compiling this implementation. */
+#ifdef __IA16__
+#ifdef huge
+#undef huge
+#endif
+#endif
+
 /* Most routines need to check whether a float is finite, infinite, or not a
    number, and many need to know whether the result of an operation will
    overflow.  These conditions depend on whether the largest exponent is
