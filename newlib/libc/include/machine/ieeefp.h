@@ -207,6 +207,10 @@
 #define __IEEE_LITTLE_ENDIAN
 #endif
 
+#if defined(__ia16__) || defined(__IA16__)
+#define __IEEE_LITTLE_ENDIAN
+#endif
+
 #ifdef __i386__
 #define __IEEE_LITTLE_ENDIAN
 # define _SUPPORTS_ERREXCEPT
