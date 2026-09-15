@@ -14,6 +14,8 @@ directory with this include order:
 2. `include/generic` — the generic tree from `newlib/libc/include` in the
    source checkout.  This avoids depending on an optional `include/newlib`
    mirror in the flat install.
+3. Clang resource headers, after newlib, so freestanding `limits.h` still
+   reads the DOS `sys/syslimits.h` and defines `PATH_MAX`.
 
 The generated `profile.sh` contains all compiler flags.  It names the
 compiler resource headers explicitly and uses `-nostdinc`; no host include
@@ -38,10 +40,10 @@ python3 libgloss/ia16/tools/stage-clang-sysroot.py \
 The script copies the two header tiers, writes `profile.sh`, and runs the
 checked-in `tests/clang-sysroot/headers.c` oracle.  The oracle is compiled as
 GNU23 with the IA16 small memory model and checks `stdio.h`, `stdlib.h`,
-`errno.h`, `time.h`, `stdint.h`, the two `#include_next` overlays, and these
+`errno.h`, `time.h`, `stdint.h`, `stddef.h`, `limits.h`, the two `#include_next` overlays, and these
 ABI facts: `int` is 16 bits, `long` is 32 bits, `size_t` is 16 bits, and this
 port's `time_t` is 64 bits.  It also checks the IA16 integer limits and
-little-endian floating-point macro.  `results.json` records the command,
+little-endian floating-point macro and DOS `PATH_MAX == 144`.  `results.json` records the command,
 compiler hash, copied file hashes, include trace, and any include path that
 escaped the resource/overlay/generic roots.  `header-oracle.log` retains the
 compiler output.

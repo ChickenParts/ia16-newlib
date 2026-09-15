@@ -12,6 +12,8 @@
 #include <errno.h>
 #include <time.h>
 #include <stdint.h>
+#include <stddef.h>
+#include <limits.h>
 
 /* These two files are target overlays and must reach their generic peers. */
 #include <sys/config.h>
@@ -22,6 +24,7 @@ _Static_assert(sizeof(long) == 4, "IA16 long must be 32 bits");
 _Static_assert(sizeof(size_t) == 2, "IA16 size_t must be 16 bits");
 /* newlib uses a 64-bit time_t when long is 32 bits in this port. */
 _Static_assert(sizeof(time_t) == 8, "IA16 time_t ABI changed");
+_Static_assert(PATH_MAX == 144, "DOS PATH_MAX must come from target syslimits");
 _Static_assert(INT_MAX == 32767, "IA16 INT_MAX changed");
 _Static_assert(UINT_MAX == 65535, "IA16 UINT_MAX changed");
 
