@@ -136,6 +136,12 @@ cat <<'EPART4'
     ASSERT(LOADADDR (.tail) + SIZEOF (.tail) <= 0xfd00,
 	   "Error: too large for a .com file.")
 
+    /* LLD requires its synthetic ELF tables to survive section selection.
+       These non-allocated tables do not become part of binary output.  */
+    .symtab 0 : { *(.symtab) }
+    .strtab 0 : { *(.strtab) }
+    .shstrtab 0 : { *(.shstrtab) }
+
     /DISCARD/ : { *(.*) }
   }
 EPART4
