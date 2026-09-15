@@ -19,8 +19,10 @@ and the exact DOS exit status from `main`. A second executable prints the
 same marker but returns 41, proving that stdout alone cannot pass the oracle.
 Commands, tool output, and lane results are retained in the output directory.
 
-This is a tiny-model smoke test. It does not establish MZ/small-model support,
-heap or file-I/O correctness, or BSS clearing when initial memory is nonzero.
+The default is tiny-model COM. Use `--memory-model small` for the small-model
+MZ CRT and linker script. Both run with normal linker overlap checks enabled.
+The startup smoke does not establish BSS clearing when initial memory is nonzero;
+heap and file-I/O checks are separate programs below.
 
 Use `--program heap` to exercise the real DOS allocator: alignment, preserved
 contents after growth, zeroed calloc, multiplication-overflow rejection,

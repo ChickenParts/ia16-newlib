@@ -334,6 +334,11 @@ done
 cat <<'EPART11'
 	}
 
+    /* Retain ELF metadata while LLD constructs binary output. These
+       non-allocated sections do not become part of the DOS executable. */
+    .symtab 0 : { *(.symtab) }
+    .strtab 0 : { *(.strtab) }
+    .shstrtab 0 : { *(.shstrtab) }
     /DISCARD/ : { *(.*) }
   }
 EPART11

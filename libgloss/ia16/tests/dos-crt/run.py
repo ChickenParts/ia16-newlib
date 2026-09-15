@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Link the real tiny DOS CRT/newlib and check stdout and DOS exit status."""
+"""Link the real DOS CRT/newlib and check stdout and DOS exit status."""
 import argparse
 import json
 import os
@@ -13,7 +13,10 @@ parser.add_argument('--sysroot', type=Path, required=True,
 parser.add_argument('--dosbox-x', type=Path, required=True)
 parser.add_argument('--out', type=Path, required=True)
 parser.add_argument('--program', choices=('main', 'heap', 'abi', 'services'), default='main')
+parser.add_argument('--memory-model', choices=('tiny', 'small'), default='tiny')
 args = parser.parse_args()
+model_letter = 't' if args.memory_model == 'tiny' else 's'
+executable = 'CRT.COM' if args.memory_model == 'tiny' else 'CRT.EXE'
 root = Path(__file__).resolve().parents[2]
 out = args.out.resolve()
 out.mkdir(parents=True, exist_ok=False)
@@ -35,26 +38,26 @@ def run(command, env=None):
 
 
 resource = run([bin_dir / 'clang', '-print-resource-dir']).strip()
-script = out / 'tiny.ld'
-script.write_text(run(['sh', root / 'dos-mt.ld.in', '-nostdlib']))
+script = out / (args.memory_model + '.ld')
+script.write_text(run(['sh', root / ('dos-mt.ld.in' if args.memory_model == 'tiny' else 'dos-mx.ld.in'), '-nostdlib']))
 results = []
 for name, returned, expected in [('positive', 42, b'EXIT42\r\n'),
                                  ('negative', 41, b'WRONGEXIT\r\n')]:
     lane = out / name
     lane.mkdir()
     run([bin_dir / 'clang', '--target=ia16-pc-msdos', '-march=8086',
-         '-mmemory-model=tiny', '-std=gnu23', '-Os', '-ffreestanding',
+         f'-mmemory-model={args.memory_model}', '-std=gnu23', '-Os', '-ffreestanding',
          '-fno-builtin', '-nostdinc', '-isystem', Path(resource) / 'include',
          '-isystem', sysroot / 'include', '-isystem', sysroot / 'include/newlib',
          f'-DRESULT={returned}', '-c', Path(__file__).with_name(args.program + '.c'),
          '-o', lane / 'main.o'])
     run([bin_dir / 'ld.lld', '-m', 'elf_ia16', '-T', script,
-         '-L', sysroot / 'lib', sysroot / 'lib/dos-t-c0.o', lane / 'main.o',
-         '--start-group', '-lc', '-ldos-t', '-lm',
+         '-L', sysroot / 'lib', sysroot / f'lib/dos-{model_letter}-c0.o', lane / 'main.o',
+         '--start-group', '-lc', f'-ldos-{model_letter}', '-lm',
          args.tool_root.resolve() / 'lib/libclang_rt.builtins-ia16.a',
-         '--end-group', '-o', lane / 'CRT.COM'])
+         '--end-group', '-o', lane / executable])
     (lane / 'CHECK.BAT').write_bytes(
-        b'@echo off\r\nset IA16TEST=runtime\r\nCRT.COM > OUT.TXT\r\n'
+        f'@echo off\r\nset IA16TEST=runtime\r\n{executable} > OUT.TXT\r\n'.encode() +
         b'if errorlevel 43 goto fail\r\nif not errorlevel 42 goto fail\r\n'
         b'echo EXIT42> STATUS.TXT\r\ngoto end\r\n:fail\r\n'
         b'echo WRONGEXIT> STATUS.TXT\r\n:end\r\n')
