@@ -81,7 +81,7 @@ try:
                     '-I' + str(overlay), '-I' + str(generic),
                     '-isystem', str(overlay), '-isystem', str(generic),
                     '-isystem', str(resource / 'include')])
-    flags = '-std=gnu17 -Os -femulated-tls -ffreestanding -fno-builtin -nostdinc'
+    flags = '-std=gnu17 -Oz -femulated-tls -ffreestanding -fno-builtin -nostdinc'
     env = dict(os.environ)
     for key in ('CPATH', 'C_INCLUDE_PATH', 'CPLUS_INCLUDE_PATH', 'OBJC_INCLUDE_PATH',
                 'COMPILER_PATH', 'LIBRARY_PATH', 'GCC_EXEC_PREFIX'):

@@ -24,7 +24,9 @@ source and compiler trees are inputs and are not changed. Failures retain
 all logs and partial outputs; choose fresh directories for another attempt.
 
 The library is compiled as GNU17, for 8086 with the small memory model,
-`-Os`, and emulated TLS. Its near-pointer C ABI is also used by tiny callers;
+`-Oz`, and emulated TLS. Minimum-size optimization keeps code within the
+near model's 64 KiB code segment; the full preen consumer exceeds that limit
+with the larger runtime profile. Its near-pointer C ABI is also used by tiny callers;
 the two formats select their matching startup object and libdos archive.
 The compiler must define `__MSDOS__` for the selected DOS target; the profile
 does not substitute a user macro for that target contract.
