@@ -717,6 +717,8 @@ HAVE_LIBC_MACHINE_LM32_FALSE
 HAVE_LIBC_MACHINE_LM32_TRUE
 HAVE_LIBC_MACHINE_IQ2000_FALSE
 HAVE_LIBC_MACHINE_IQ2000_TRUE
+HAVE_LIBC_MACHINE_IA16_FALSE
+HAVE_LIBC_MACHINE_IA16_TRUE
 HAVE_LIBC_MACHINE_I960_FALSE
 HAVE_LIBC_MACHINE_I960_TRUE
 HAVE_LIBC_MACHINE_I386_FALSE
@@ -5923,6 +5925,13 @@ else
   HAVE_LIBC_MACHINE_I960_TRUE='#'
   HAVE_LIBC_MACHINE_I960_FALSE=
 fi
+ if test "${machine_dir}" = ia16; then
+  HAVE_LIBC_MACHINE_IA16_TRUE=
+  HAVE_LIBC_MACHINE_IA16_FALSE='#'
+else
+  HAVE_LIBC_MACHINE_IA16_TRUE='#'
+  HAVE_LIBC_MACHINE_IA16_FALSE=
+fi
  if test "${machine_dir}" = iq2000; then
   HAVE_LIBC_MACHINE_IQ2000_TRUE=
   HAVE_LIBC_MACHINE_IQ2000_FALSE='#'
@@ -7899,6 +7908,10 @@ Usually this means the macro was only invoked conditionally." "$LINENO" 5
 fi
 if test -z "${HAVE_LIBC_MACHINE_I960_TRUE}" && test -z "${HAVE_LIBC_MACHINE_I960_FALSE}"; then
   as_fn_error $? "conditional \"HAVE_LIBC_MACHINE_I960\" was never defined.
+Usually this means the macro was only invoked conditionally." "$LINENO" 5
+fi
+if test -z "${HAVE_LIBC_MACHINE_IA16_TRUE}" && test -z "${HAVE_LIBC_MACHINE_IA16_FALSE}"; then
+  as_fn_error $? "conditional \"HAVE_LIBC_MACHINE_IA16\" was never defined.
 Usually this means the macro was only invoked conditionally." "$LINENO" 5
 fi
 if test -z "${HAVE_LIBC_MACHINE_IQ2000_TRUE}" && test -z "${HAVE_LIBC_MACHINE_IQ2000_FALSE}"; then

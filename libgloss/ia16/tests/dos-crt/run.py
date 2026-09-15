@@ -12,7 +12,7 @@ parser.add_argument('--sysroot', type=Path, required=True,
                     help='Target directory containing include/ and lib/')
 parser.add_argument('--dosbox-x', type=Path, required=True)
 parser.add_argument('--out', type=Path, required=True)
-parser.add_argument('--program', choices=('main', 'heap'), default='main')
+parser.add_argument('--program', choices=('main', 'heap', 'abi'), default='main')
 args = parser.parse_args()
 root = Path(__file__).resolve().parents[2]
 out = args.out.resolve()

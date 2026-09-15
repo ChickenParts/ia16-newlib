@@ -48,7 +48,7 @@ m4_foreach_w([MACHINE], [
   epiphany
   fr30 frv ft32
   h8300 h8500 hppa
-  i386 i960 iq2000
+  i386 i960 ia16 iq2000
   lm32
   m32c m32r m68hc11 m68k m88k mep microblaze mips mn10200 mn10300 moxie msp430 mt
   nds32 necv70 nios2 nvptx

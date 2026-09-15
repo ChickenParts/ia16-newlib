@@ -28,3 +28,8 @@ contents after growth, zeroed calloc, multiplication-overflow rejection,
 the exhausted heap. The same wrong-exit control runs for this program.
 This coverage uses the installed allocator; it does not substitute a bump
 allocator or establish interrupt reentrancy.
+
+Use `--program abi` to verify that the assembly `strlen` preserves Clang's
+callee-saved BX register while returning the correct length. It seeds BX
+explicitly, so the check does not depend on the optimizer keeping a variable
+in that register.

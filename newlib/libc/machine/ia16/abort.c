@@ -69,9 +69,9 @@ __ia16_abort_impl (abort_regs_t regs)
 		    msg2[] = NL "stk:" NL;
 
   write (2, msg1, sizeof (msg1) - 1);
-  dump_mem ((const unsigned *) &regs, sizeof (regs) / sizeof (unsigned));
+  dump_mem ((const unsigned __far *) &regs, sizeof (regs) / sizeof (unsigned));
   write (2, msg2, sizeof (msg2) - 1);
-  dump_mem ((const unsigned *) MK_FP (regs.ss, regs.sp), 192);
+  dump_mem ((const unsigned __far *) MK_FP (regs.ss, regs.sp), 192);
 
 #ifndef __IA16_FEATURE_PROTECTED_MODE
   /* _exit (.) may ultimately make the system weird out and wipe the

@@ -269,3 +269,21 @@
 # endif
 # define RET2_(n)		RET_ (n)
 #endif
+
+/* Clang's cdecl ABI preserves BX.  GCC IA16 uses it as scratch, so the
+   original argument-access macros did not save it.  Keep BX addressing the
+   original entry SP while saving its incoming value below that frame.
+   Zero-argument and explicitly framed assembly routines manage their own
+   registers and do not use ENTER_BX_.  */
+#if defined(__clang__) && !defined(__IA16_CALLCVT_REGPARMCALL) \
+    && !defined(__IA16_CALLCVT_STDCALL) && !defined(IA16_EXPLICIT_FRAME)
+# undef ENTER_BX_
+# undef ENTER2_BX_
+# undef RET_
+# undef RET2_
+# define ENTER_BX_(n) .if (n); pushw %bx; movw %sp, %bx; \
+                      addw $2, %bx; .endif
+# define ENTER2_BX_(n) ENTER_BX_(n)
+# define RET_(n) .if (n); popw %bx; .endif; RET__
+# define RET2_(n) RET_(n)
+#endif

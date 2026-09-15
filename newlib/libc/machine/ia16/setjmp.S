@@ -12,6 +12,7 @@
 # es		0x10
 # ip            0x12
 	
+#define IA16_EXPLICIT_FRAME 1
 #include "call-cvt.h"
 
 	.arch i8086,jumps
