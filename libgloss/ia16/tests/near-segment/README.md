@@ -24,3 +24,6 @@ execute it. General constructor/destructor support is a separate startup
 requirement, including the timer installation in dos-timesr.S. This test proves
 the slot is ready before that machinery; it does not claim that all constructor
 or timer behavior is implemented.
+
+The maintained Clang profile now supplies those callback walks; see
+[constructor and timer acceptance](../initfini/README.md) for their separate tests.

@@ -247,3 +247,12 @@ _times_r:
 
 	.lcomm	.Lp_orig_int_0x1c, 4
 	.lcomm	.Lp_indos, 4
+
+#if defined(__clang__) && !defined(__IA16_FEATURE_DOSX) \
+    && !defined(__IA16_CMODEL_IS_FAR_TEXT) && !defined(__FAR_CODE__)
+	/* _exit bypasses application atexit handlers, but DOS does not restore
+	   INT 1Ch.  Release our runtime-owned hook on every process termination.
+	   Normal exit already ran the dtor; its vector check makes this a no-op. */
+	.section .fini, "ax"
+	callw	.Ldtor_timesr
+#endif

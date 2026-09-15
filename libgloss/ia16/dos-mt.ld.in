@@ -9,6 +9,8 @@ w3=without
 crt0=-l:dos-t-c0.o
 while [ $# -gt 0 ]; do
   case "$1" in
+    -mclang-runtime)
+       clang_runtime=yes;;
     -nostdlib)
       cmd1='/^@if_starts@/,/^@endif@/ d'
       cmd2='/^@if_libs@/,/^@endif@/ d'
@@ -26,7 +28,11 @@ while [ $# -gt 0 ]; do
   esac
   shift
 done
-sed -e "$cmd1" -e "$cmd2" -e "s;@crt0@;$crt0;g" \
+clang_cmd='/^@clang@/d'
+if [ "${clang_runtime:-no}" = yes ] && [ "$w3" = without ]; then
+  clang_cmd='s/^@clang@//'
+fi
+sed -e "$clang_cmd" -e "$cmd1" -e "$cmd2" -e "s;@crt0@;$crt0;g" \
     -e "s;@withstarts@;$w1;g" -e "s;@withlibs@;$w2;g" \
     -e "s;@withdpmiable@;$w3;g" \
     -e "s/@self@/`basename "$0"`/g" -e "/^@if/ d" -e "/^@endif@/ d" <<'EPART1'
@@ -76,15 +82,31 @@ SECTIONS
 		__sdata = .;
 
 		/* Build lists of constructors and destructors.  */
+@clang@		. = ALIGN(2);
+@clang@		__ia16_ctors_start = .;
 		KEEP (*crtbegin*.o(.ctors))
 		KEEP (*(EXCLUDE_FILE (*crtend*.o ) .ctors))
 		KEEP (*(SORT(.ctors.*)))
 		KEEP (*(.ctors))
+@clang@		__ia16_ctors_end = .;
 
+@clang@		__ia16_dtors_start = .;
 		KEEP (*crtbegin*.o(.dtors))
 		KEEP (*(EXCLUDE_FILE (*crtend*.o ) .dtors))
 		KEEP (*(SORT(.dtors.*)))
 		KEEP (*(.dtors))
+@clang@		__ia16_dtors_end = .;
+@clang@		__ia16_preinit_array_start = .;
+@clang@		KEEP (*(.preinit_array))
+@clang@		__ia16_preinit_array_end = .;
+@clang@		__ia16_init_array_start = .;
+@clang@		KEEP (*(SORT_BY_INIT_PRIORITY(.init_array.*)))
+@clang@		KEEP (*(.init_array))
+@clang@		__ia16_init_array_end = .;
+@clang@		__ia16_fini_array_start = .;
+@clang@		KEEP (*(SORT_BY_INIT_PRIORITY(.fini_array.*)))
+@clang@		KEEP (*(.fini_array))
+@clang@		__ia16_fini_array_end = .;
 
 		*(.msdos_init_rodata) *(.msdos_init_rodata.*)
 		*(.rodata) *(.rodata.*)

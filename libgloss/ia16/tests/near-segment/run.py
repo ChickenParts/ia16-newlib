@@ -38,7 +38,7 @@ for model, suffix, letter in [('tiny', 'COM', 't'), ('small', 'EXE', 's')]:
     d.mkdir()
     script = d / 'runtime.ld'
     template = source / ('dos-mt.ld.in' if model == 'tiny' else 'dos-mx.ld.in')
-    script.write_text(run(['sh', template, '-nostdlib']))
+    script.write_text(run(['sh', template, '-nostdlib', '-mclang-runtime']))
     flags = ['--target=ia16-pc-msdos', '-march=8086', '-mmemory-model=' + model,
              '-D__IA16_CALLCVT_CDECL=1']
     headers = ['-nostdinc', '-isystem', a.header_stage / 'include/overlay',

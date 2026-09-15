@@ -107,7 +107,7 @@ try:
     shutil.copy2(builtins, target / 'lib/libclang_rt.builtins-ia16.a')
     for model, template in [('tiny', 'dos-mt.ld.in'), ('small', 'dos-mx.ld.in')]:
         output = subprocess.check_output(['sh', source / 'libgloss/ia16' / template,
-                                          '-nostdlib'], text=True)
+                                          '-nostdlib', '-mclang-runtime'], text=True)
         (target / 'lib' / ('dos-clang-' + model + '.ld')).write_text(output)
     # The maintained oracle verifies GNU23 widths and both include_next tiers,
     # and rejects any header read outside the explicit target/resource trees.

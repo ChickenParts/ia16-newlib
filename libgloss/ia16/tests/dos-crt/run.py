@@ -39,7 +39,7 @@ def run(command, env=None):
 
 resource = run([bin_dir / 'clang', '-print-resource-dir']).strip()
 script = out / (args.memory_model + '.ld')
-script.write_text(run(['sh', root / ('dos-mt.ld.in' if args.memory_model == 'tiny' else 'dos-mx.ld.in'), '-nostdlib']))
+script.write_text(run(['sh', root / ('dos-mt.ld.in' if args.memory_model == 'tiny' else 'dos-mx.ld.in'), '-nostdlib', '-mclang-runtime']))
 results = []
 for name, returned, expected in [('positive', 42, b'EXIT42\r\n'),
                                  ('negative', 41, b'WRONGEXIT\r\n')]:
@@ -47,8 +47,8 @@ for name, returned, expected in [('positive', 42, b'EXIT42\r\n'),
     lane.mkdir()
     run([bin_dir / 'clang', '--target=ia16-pc-msdos', '-march=8086',
          f'-mmemory-model={args.memory_model}', '-std=gnu23', '-Os', '-ffreestanding',
-         '-fno-builtin', '-nostdinc', '-isystem', Path(resource) / 'include',
-         '-isystem', sysroot / 'include', '-isystem', sysroot / 'include/newlib',
+         '-fno-builtin', '-nostdinc', '-isystem', sysroot / 'include',
+         '-isystem', sysroot / 'include/newlib', '-isystem', Path(resource) / 'include',
          f'-DRESULT={returned}', '-c', Path(__file__).with_name(args.program + '.c'),
          '-o', lane / 'main.o'])
     run([bin_dir / 'ld.lld', '-m', 'elf_ia16', '-T', script,

@@ -63,3 +63,8 @@ compiler-rt archive. They retain normal linker section checks. The generated
 scripts omit GCC startup/default libraries so these are never selected from
 the host. The tiny/small profile does not claim DOS extender support, far
 memory allocation, or multithreaded TLS semantics.
+
+Clang startup includes constructor/destructor traversal and runtime timer cleanup.
+The generated scripts select `-mclang-runtime`; direct template users must select
+that option too. See [startup acceptance](tests/initfini/README.md) for callback
+order, direct `_exit()` behavior, and tested exclusions.

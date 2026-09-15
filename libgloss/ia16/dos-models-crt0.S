@@ -34,6 +34,14 @@
 
 #include "call-cvt.h"
 
+/* The Clang DOS profile does not link GCC's crtbegin/crtend.  Limit the
+   replacement to the supported near-code, real-mode cdecl profiles. */
+#if defined(__clang__) && (defined(TINY) || defined(SMALL)) \
+    && !defined(DOSX) && !defined(TSR) && !defined(__FAR_CODE__) \
+    && !defined(__IA16_CALLCVT_REGPARMCALL) && !defined(__IA16_CALLCVT_STDCALL)
+# define IA16_CLANG_INITFINI 1
+#endif
+
 	.global	_start
 
 	.section .startupA, "ax"
@@ -318,6 +326,12 @@ __stext_nokeep_to_copy:
 
 	.section .startupF, "ax"
 
+#ifdef IA16_CLANG_INITFINI
+	/* argc, argv and envp remain on the stack across this cdecl call.
+	   The fall-through .preinit fragments have already initialized DS state. */
+	callw	.Lclang_init
+#endif
+
 #ifdef __IA16_CALLCVT_REGPARMCALL
 	popw	%ax		# argc
 	movw	%sp,	%dx	# argv
@@ -453,4 +467,84 @@ __msdos_crt_exit:
 	# arguments out to the data segment, rather than modify them in
 	# place in DOS's PSP --- since the PSP is outside the data segment.
 	.lcomm	.Largv, 128
+#endif
+
+#ifdef IA16_CLANG_INITFINI
+	.section .text, "ax"
+
+/* Register cleanup before running constructors, so exit() from main or a
+   constructor follows the same finalization path.  _exit() still bypasses it. */
+.Lclang_init:
+	pushw	%bx
+	pushw	%si
+	pushw	%di
+	pushw	%bp
+	movw	$.Lclang_fini, %ax
+	pushw	%ax
+	callw	atexit
+	addw	$2, %sp
+	testw	%ax, %ax
+	jnz	.Lclang_init_failed
+	movw	$__ia16_preinit_array_start, %si
+	movw	$__ia16_preinit_array_end, %di
+	callw	.Lclang_walk_forward
+	movw	$__ia16_ctors_end, %si
+	movw	$__ia16_ctors_start, %di
+	callw	.Lclang_walk_reverse
+	movw	$__ia16_init_array_start, %si
+	movw	$__ia16_init_array_end, %di
+	callw	.Lclang_walk_forward
+	popw	%bp
+	popw	%di
+	popw	%si
+	popw	%bx
+	retw
+.Lclang_init_failed:
+	movw	$127, %ax
+	pushw	%ax
+	callw	_exit
+
+.Lclang_fini:
+	pushw	%bx
+	pushw	%si
+	pushw	%di
+	pushw	%bp
+	movw	$__ia16_fini_array_end, %si
+	movw	$__ia16_fini_array_start, %di
+	callw	.Lclang_walk_reverse
+	movw	$__ia16_dtors_start, %si
+	movw	$__ia16_dtors_end, %di
+	callw	.Lclang_walk_forward
+	popw	%bp
+	popw	%di
+	popw	%si
+	popw	%bx
+	retw
+
+/* Legacy lists may contain GCC-style zero and -1 sentinels.  User callbacks
+   obey the cdecl callee-save contract, including SI and DI used by the walk. */
+.Lclang_walk_forward:
+	cmpw	%di, %si
+	je	.Lclang_walk_done
+	movw	(%si), %ax
+	addw	$2, %si
+	testw	%ax, %ax
+	jz	.Lclang_walk_forward
+	cmpw	$-1, %ax
+	je	.Lclang_walk_forward
+	callw	*%ax
+	jmp	.Lclang_walk_forward
+.Lclang_walk_reverse:
+	cmpw	%di, %si
+	je	.Lclang_walk_done
+	subw	$2, %si
+	movw	(%si), %ax
+	testw	%ax, %ax
+	jz	.Lclang_walk_reverse
+	cmpw	$-1, %ax
+	je	.Lclang_walk_reverse
+	callw	*%ax
+	jmp	.Lclang_walk_reverse
+.Lclang_walk_done:
+	retw
 #endif

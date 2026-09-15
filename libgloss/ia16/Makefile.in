@@ -560,6 +560,7 @@ t-%scanfr.o: t-stdio.S
 
 GEN_LD_SCRIPT = \
   CC='$(CC)' CFLAGS='$(CFLAGS) $(CFLAGS_FOR_TARGET)' \
+    clang_runtime='$(IA16_CC_IS_CLANG)' \
     multidir='$(DESTDIR)$(tooldir)/lib$(MULTISUBDIR)' $(SHELL) $<
 
 # dos-com.ld and dos-exe-small.ld are "older" names for dos-mtsl.ld and
