@@ -106,7 +106,7 @@ get_release_version_sysname (struct utsname *unm)
   __asm volatile ("int $0x21"
 		  : "=Rah" (minor), "=Ral" (major), "=b" (oem)
 		  : "a" (0x3000U)
-		  : "cc", "bl", "cx", "dx");
+		  : "cc", "cx", "dx");
 
   __asm volatile ("int $0x21; sbbb %2, %2"
 		  : "=Ral" (al), "=b" (bx), "=r" (carry)
