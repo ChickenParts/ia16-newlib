@@ -288,7 +288,12 @@ def main() -> int:
             raise RuntimeError(f"Clang resource headers do not exist: {resource_include}")
 
         overlay_source = build_root / target / "newlib" / "targ-include"
-        generic_source = install_prefix / target / "include" / "newlib"
+        # The flat installed include directory may have target wrappers at
+        # generic paths, and the optional include/newlib mirror is not part of
+        # every install.  The checked-in generic source tree is authoritative
+        # for the second tier; the completed install is still retained for the
+        # target library provenance exposed in the generated profile.
+        generic_source = source_generic
         install_lib = install_prefix / target / "lib"
         if not install_lib.is_dir():
             raise RuntimeError(f"installed target library directory does not exist: {install_lib}")
@@ -296,8 +301,8 @@ def main() -> int:
             raise RuntimeError(f"target overlay from completed build does not exist: {overlay_source}")
         if not generic_source.is_dir():
             raise RuntimeError(
-                "preserved generic install tree is missing; expected "
-                f"{generic_source} (install the generic headers under include/newlib)"
+                "generic source tree is missing; expected "
+                f"{generic_source}"
             )
 
         output.mkdir(parents=True)

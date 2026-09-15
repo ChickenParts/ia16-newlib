@@ -11,8 +11,9 @@ newlib build and install.  It reads the inputs and creates a new output
 directory with this include order:
 
 1. `include/overlay` — `newlib/targ-include` from the completed IA16 build.
-2. `include/generic` — the preserved generic tree at
-   `include/newlib` in the completed install.
+2. `include/generic` — the generic tree from `newlib/libc/include` in the
+   source checkout.  This avoids depending on an optional `include/newlib`
+   mirror in the flat install.
 
 The generated `profile.sh` contains all compiler flags.  It names the
 compiler resource headers explicitly and uses `-nostdinc`; no host include
