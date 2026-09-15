@@ -31,6 +31,8 @@ def run(cmd, **kwargs):
         raise RuntimeError(r.stderr or r.stdout)
     return r.stdout
 
+resource = Path(run([a.tool_root / 'bin/clang', '-print-resource-dir']).strip())
+
 for model, suffix, letter in [('tiny', 'COM', 't'), ('small', 'EXE', 's')]:
     d = a.out / model
     d.mkdir()
@@ -41,7 +43,7 @@ for model, suffix, letter in [('tiny', 'COM', 't'), ('small', 'EXE', 's')]:
              '-D__IA16_CALLCVT_CDECL=1']
     headers = ['-nostdinc', '-isystem', a.header_stage / 'include/overlay',
                '-isystem', a.header_stage / 'include/generic',
-               '-isystem', a.tool_root / 'lib/clang/24/include']
+               '-isystem', resource / 'include']
     for name, path in [('positive', source / 'dos-near-data-segment.S'),
                        ('negative', fixture / 'negative.S'), ('check', fixture / 'check.S')]:
         run([a.tool_root / 'bin/clang', *flags, '-c', path, '-o', d / (name + '.o')])
