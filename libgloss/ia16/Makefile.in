@@ -385,7 +385,7 @@ endif
 dos-timesr.o: dos-timesr.S call-cvt.h
 
 libnosys.a:
-	$(MAKE) -C ../libnosys/ libnosys.a
+	$(MAKE) -C .. libnosys/libnosys.a
 	rm -f $@
 	ln -s ../libnosys/libnosys.a $@
 
@@ -406,7 +406,7 @@ $(DOS_MEDIUM_BSP) : $(DOS_MEDIUM_OBJS)
 # FIXME: This code makes a number of assumptions, e.g. that libc.a will be
 # built when we reach here, and that the .o file names cannot clash with our
 # BSP modules' names.  -- tkchia 20190201
-$(NANO_STDIO_BSP): $(objroot)/newlib/libc/libc.a $(NANO_STDIO_OBJS)
+$(NANO_STDIO_BSP): $(objroot)/newlib/libc.a $(NANO_STDIO_OBJS)
 	$(AR) rcs $@.1.tmp $(NANO_STDIO_OBJS)
 	set -e; \
 	a="$@.1.tmp"; \
