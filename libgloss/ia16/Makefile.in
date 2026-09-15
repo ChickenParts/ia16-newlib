@@ -367,8 +367,17 @@ dos-rmdir.o: dos-rmdir.S call-cvt.h
 dos-unlinkr.o: dos-unlinkr.S call-cvt.h
 dos-writer.o: dos-writer.S call-cvt.h
 
-# (!) dos-timesr.S uses the division operator.
+# (!) dos-timesr.S uses the division operator.  GNU as treats '/' as a
+# comment character unless --divide is selected.  Clang's integrated
+# assembler parses the expression itself and rejects the driver spelling;
+# retain the flag for GNU as while leaving it off for Clang.
+ifneq ($(findstring clang,$(CC)),)
+ifneq ($(findstring -fno-integrated-as,$(CC) $(CFLAGS)),)
 dos-timesr.o: override CFLAGS += -Wa,--divide
+endif
+else
+dos-timesr.o: override CFLAGS += -Wa,--divide
+endif
 dos-timesr.o: dos-timesr.S call-cvt.h
 
 libnosys.a:
