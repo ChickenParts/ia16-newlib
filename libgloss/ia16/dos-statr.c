@@ -64,7 +64,7 @@ static int dos_findfirst (struct _reent *reent, const char *path,
 			  struct _find_t *findbuf)
 {
   int ret, carry;
-  dos_set_dta (findbuf);
+  dos_set_dta ((void __far *) findbuf);
   asm volatile ("int $0x21; sbb %0, %0" :
 		"=r"(carry), "=a"(ret) :
 	        "Rah"((char)0x4e), "c"(ALL_FILES),
