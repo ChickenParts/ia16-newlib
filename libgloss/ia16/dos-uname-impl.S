@@ -23,6 +23,9 @@
 	TEXT_ (ia16_get_hw_cpu.S.LIBGLOSS)
 	.global	__ia16_get_hw_cpu
 __ia16_get_hw_cpu:
+#ifdef __clang__
+	pushw	%bx
+#endif
 #if defined __IA16_FEATURE_PROTECTED_MODE
 	/*
 	 * If we are already running under DPMI, then the CPU is obviously
@@ -89,6 +92,9 @@ __ia16_get_hw_cpu:
 #endif
 	movb	$HW_I286, %al
 	cbtw
+#ifdef __clang__
+	popw	%bx
+#endif
 	RET_ (0)
 
 	.section .text

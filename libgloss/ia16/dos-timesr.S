@@ -33,6 +33,9 @@
 	.section .text, "ax"
 
 .Lctor_timesr:
+#ifdef __clang__
+	pushw	%bx
+#endif
 #ifndef __IA16_FEATURE_DOSX
 	pushw	%es
 	movb	$0x34,	%ah
@@ -47,6 +50,9 @@
 	movw	$.Lour_int_0x1c, %dx
 	int	$0x21
 	popw	%es
+#ifdef __clang__
+	popw	%bx
+#endif
 	RET_ (0)
 #else
 	pushw	%es
@@ -84,10 +90,16 @@
 	movw	$.Lour_int_0x1c, %dx
 	movw	%cs,	%cx
 	callw	*__dosx_dpmi16_shim
+#ifdef __clang__
+	popw	%bx
+#endif
 	RET_ (0)
 #endif
 
 .Ldtor_timesr:
+#ifdef __clang__
+	pushw	%bx
+#endif
 #ifndef __IA16_FEATURE_DOSX
 	pushw	%es
 	/*
@@ -108,6 +120,9 @@
 	int	$0x21
 	popw	%ds
 0:	popw	%es
+#ifdef __clang__
+	popw	%bx
+#endif
 	RET_ (0)
 #else
 	movw	$0x0204, %ax
@@ -122,7 +137,11 @@
 	movw	.Lp_orig_int_0x1c+2, %cx
 	incw	%ax
 	int	$0x31
-0:	RET_ (0)
+0:
+#ifdef __clang__
+	popw	%bx
+#endif
+	RET_ (0)
 #endif
 
 	.global	_times_r
