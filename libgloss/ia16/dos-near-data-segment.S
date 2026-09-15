@@ -22,9 +22,9 @@
 	.global	__ia16_near_data_segment
 __ia16_near_data_segment:
 #ifndef __IA16_FEATURE_DOSX
-	SEG_RELOC_ (., 9f)
+	SEG_RELOC_ (., .Lnear_data_segment)
 #endif
-	.hword	0
+	.short	0
 
 #ifdef __IA16_FEATURE_DOSX
 .Lctor_near_data_segment:
@@ -46,8 +46,8 @@ __ia16_near_data_segment:
 	.section .ctors.65535
 
 	.balign	2
-	.hword	.Lctor_near_data_segment
+	.short	.Lctor_near_data_segment
 #endif
 
 	.section .data, "aw"
-9:
+.Lnear_data_segment:

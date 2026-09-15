@@ -101,7 +101,9 @@
  * clobber %bx itself for the `cdecl' and `stdcall' conventions.
  */
 
-#ifdef __IA16_ABI_SEGELF
+/* Clang ELF output uses the GNU SEGELF relocation model.  Keep the
+   historical OZ relocation path for GCC configurations that select it. */
+#if defined(__IA16_ABI_SEGELF) || (defined(__clang__) && defined(__ELF__))
 # define AUX__(func)		AUX___(func##!)
 # define SEG_RELOC_(place, sym) .reloc (place), R_386_SEG16, AUX__(sym)
 #else
@@ -114,7 +116,7 @@
 # define JMP_(func)		jmp func
 # define CALL_(func)		call func
 # define TEXT_(tag)		.text
-# define TEXT_PTR_(func)	.hword func
+# define TEXT_PTR_(func)	.short func
 #else
 # define FAR_ADJ__		2
 # define RET__			lret
@@ -124,7 +126,7 @@
 				lcall $0, $func
 # define TEXT_(tag)		.section AUX___(.fartext.f.##tag##$), "ax"
 # define TEXT_PTR_(func)	SEG_RELOC_ (.+2, func); \
-				.hword func, 0
+				.short func, 0
 #endif
 #define DATA_(tag)		.data
 #if defined __IA16_CALLCVT_REGPARMCALL

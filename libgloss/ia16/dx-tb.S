@@ -75,7 +75,7 @@
 
 	.global	__dosx_tb_sz
 __dosx_tb_sz:
-	.hword	MIN_TB_SZ
+	.short	MIN_TB_SZ
 
 	.section .ctors.65535
 

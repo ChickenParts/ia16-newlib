@@ -169,9 +169,9 @@ _times_r:
 	.section .data, "aw"
 
 .Luser_counter:
-	.hword	-19663, 0, 0
+	.short	-19663, 0, 0
 .Lsystem_counter:
-	.hword	-19663, 0, 0
+	.short	-19663, 0, 0
 
 #ifdef __IA16_FEATURE_DOSX
 	.section .text, "ax"
