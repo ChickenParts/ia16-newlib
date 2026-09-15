@@ -14,7 +14,8 @@
 
 #include "call-cvt.h"
 
-#if defined(__clang__) && !defined(__IA16_FEATURE_DOSX) && defined(__IA16_CMODEL_IS_FAR_TEXT)
+#if defined(__clang__) && !defined(__IA16_FEATURE_DOSX) && \
+    (defined(__IA16_CMODEL_IS_FAR_TEXT) || defined(__FAR_CODE__))
 # error "Clang real-DOS data-segment initialization requires a near-text model"
 #endif
 
