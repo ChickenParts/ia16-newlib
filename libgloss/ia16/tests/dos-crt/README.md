@@ -21,3 +21,10 @@ Commands, tool output, and lane results are retained in the output directory.
 
 This is a tiny-model smoke test. It does not establish MZ/small-model support,
 heap or file-I/O correctness, or BSS clearing when initial memory is nonzero.
+
+Use `--program heap` to exercise the real DOS allocator: alignment, preserved
+contents after growth, zeroed calloc, multiplication-overflow rejection,
+512 allocate/free cycles, near-heap exhaustion and allocation after releasing
+the exhausted heap. The same wrong-exit control runs for this program.
+This coverage uses the installed allocator; it does not substitute a bump
+allocator or establish interrupt reentrancy.

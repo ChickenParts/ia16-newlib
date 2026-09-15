@@ -12,6 +12,7 @@ parser.add_argument('--sysroot', type=Path, required=True,
                     help='Target directory containing include/ and lib/')
 parser.add_argument('--dosbox-x', type=Path, required=True)
 parser.add_argument('--out', type=Path, required=True)
+parser.add_argument('--program', choices=('main', 'heap'), default='main')
 args = parser.parse_args()
 root = Path(__file__).resolve().parents[2]
 out = args.out.resolve()
@@ -45,7 +46,7 @@ for name, returned, expected in [('positive', 42, b'EXIT42\r\n'),
          '-mmemory-model=tiny', '-std=gnu23', '-Os', '-ffreestanding',
          '-fno-builtin', '-nostdinc', '-isystem', Path(resource) / 'include',
          '-isystem', sysroot / 'include', '-isystem', sysroot / 'include/newlib',
-         f'-DRESULT={returned}', '-c', Path(__file__).with_name('main.c'),
+         f'-DRESULT={returned}', '-c', Path(__file__).with_name(args.program + '.c'),
          '-o', lane / 'main.o'])
     run([bin_dir / 'ld.lld', '-m', 'elf_ia16', '-T', script,
          '-L', sysroot / 'lib', sysroot / 'lib/dos-t-c0.o', lane / 'main.o',
