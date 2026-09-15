@@ -14,6 +14,10 @@
 
 #include "call-cvt.h"
 
+#if defined(__clang__) && !defined(__IA16_FEATURE_DOSX) && defined(__IA16_CMODEL_IS_FAR_TEXT)
+# error "Clang real-DOS data-segment initialization requires a near-text model"
+#endif
+
 	.arch	i8086, jumps
 	.code16
 
@@ -21,10 +25,22 @@
 	.balign	2
 	.global	__ia16_near_data_segment
 __ia16_near_data_segment:
-#ifndef __IA16_FEATURE_DOSX
+#if !defined(__IA16_FEATURE_DOSX) && !defined(__clang__)
 	SEG_RELOC_ (., .Lnear_data_segment)
 #endif
 	.short	0
+
+#if defined(__clang__) && !defined(__IA16_FEATURE_DOSX)
+	/* The GNU binary DOS scripts do not translate Clang SEGELF companion
+	   symbols into loader relocations.  Their .preinit fragments execute
+	   after startupE establishes DS == SS and before .init/main.  Initialize
+	   this CS-resident slot from the actual DOS load segment, without
+	   changing any general register or FLAGS.  This is fall-through startup
+	   code, not a function or a .ctors entry.  */
+	.section .preinit, "ax"
+	movw	%ss,	%cs:__ia16_near_data_segment
+	.text
+#endif
 
 #ifdef __IA16_FEATURE_DOSX
 .Lctor_near_data_segment:
