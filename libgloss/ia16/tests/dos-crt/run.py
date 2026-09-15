@@ -12,7 +12,7 @@ parser.add_argument('--sysroot', type=Path, required=True,
                     help='Target directory containing include/ and lib/')
 parser.add_argument('--dosbox-x', type=Path, required=True)
 parser.add_argument('--out', type=Path, required=True)
-parser.add_argument('--program', choices=('main', 'heap', 'abi'), default='main')
+parser.add_argument('--program', choices=('main', 'heap', 'abi', 'services'), default='main')
 args = parser.parse_args()
 root = Path(__file__).resolve().parents[2]
 out = args.out.resolve()
@@ -54,7 +54,7 @@ for name, returned, expected in [('positive', 42, b'EXIT42\r\n'),
          args.tool_root.resolve() / 'lib/libclang_rt.builtins-ia16.a',
          '--end-group', '-o', lane / 'CRT.COM'])
     (lane / 'CHECK.BAT').write_bytes(
-        b'@echo off\r\nCRT.COM > OUT.TXT\r\n'
+        b'@echo off\r\nset IA16TEST=runtime\r\nCRT.COM > OUT.TXT\r\n'
         b'if errorlevel 43 goto fail\r\nif not errorlevel 42 goto fail\r\n'
         b'echo EXIT42> STATUS.TXT\r\ngoto end\r\n:fail\r\n'
         b'echo WRONGEXIT> STATUS.TXT\r\n:end\r\n')

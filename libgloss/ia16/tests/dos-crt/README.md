@@ -33,3 +33,8 @@ Use `--program abi` to verify that the assembly `strlen` preserves Clang's
 callee-saved BX register while returning the correct length. It seeds BX
 explicitly, so the check does not depend on the optimizer keeping a variable
 in that register.
+
+Use `--program services` for DOS file create/write/read/close/remove, missing
+file `ENOENT`, inherited environment lookup and a basic positive `time()`
+result. It checks these specific services; it does not claim comprehensive
+DOS-error translation, text-mode newline conversion or time-zone correctness.
