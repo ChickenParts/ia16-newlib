@@ -32,8 +32,8 @@ class IA16RuntimeRebuilderTest < Minitest::Test
   def test_detects_when_an_object_no_longer_matches_its_archived_member
     objects = File.join(@directory, 'objects')
     FileUtils.mkdir_p(objects)
-    File.binwrite(File.join(objects, 'first.o'), "fixture one\n")
-    File.binwrite(File.join(objects, 'second.o'), "fixture two\n")
+    File.binwrite(File.join(objects, 'first.o'), "\x7fELF\xfffixture one\n".b)
+    File.binwrite(File.join(objects, 'second.o'), "\x7fELF\xfefixture two\n".b)
     archive = File.join(@directory, 'libdos-fixture.a')
     _stdout, stderr, status = Open3.capture3('/usr/bin/ar', 'rcs', archive,
       'first.o', 'second.o', chdir: objects)
@@ -47,7 +47,7 @@ class IA16RuntimeRebuilderTest < Minitest::Test
       %w[first.o second.o].map { |name| File.join(objects, name) },
       expected_names: %w[first.o second.o])
 
-    File.binwrite(File.join(objects, 'second.o'), "changed fixture\n")
+    File.binwrite(File.join(objects, 'second.o'), "\x7fELF\xfdchanged fixture\n".b)
     error = assert_raises(IA16RuntimeRebuilder::Error) do
       IA16RuntimeRebuilder.verify_archive_members!(archive, objects,
         expected_members: %w[first.o second.o])
