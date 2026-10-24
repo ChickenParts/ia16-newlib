@@ -1,8 +1,7 @@
 #!/usr/bin/env ruby
-# Build and inspect the pinned buggy and checked-out CPU helper revisions.
+# Build DOS and bare-machine images and record the linked CS-relative receipt.
 
 require 'digest'
-require 'fileutils'
 require 'json'
 require 'open3'
 require 'optparse'
@@ -11,7 +10,6 @@ require 'shellwords'
 
 BASELINE_REV = 'f0add853331c830ecf0d14d107f6b51e4a0abb13'
 HELPER = 'libgloss/ia16/dos-uname-impl.S'
-FIXTURE = 'libgloss/ia16/tests/uname-cpu/runtime.S'
 EXPECTED_BASELINE = [
   0x8c, 0xd8,       # mov %ds, %ax overwrites the computed alias segment
   0x9c, 0xfa,       # pushf; cli
@@ -27,6 +25,8 @@ EXPECTED_CANDIDATE = [
    0x8e, 0xd8, 0x8b, 0x57, 0xff, 0xfe, 0x0f, 0x8b, 0x47, 0xff, 0xfe, 0x07],
   [0xb0, 0x03, 0x1f, 0x9d, 0x98] # final class byte, restore DS/FLAGS, sign extend
 ].freeze
+RECEIPT_BYTES = ['IA24'.bytes, [1, 0, 16, 0xff, 0xff, 0xff].freeze,
+                 Array.new(32, 0xff)].flatten.freeze
 
 options = {}
 OptionParser.new do |parser|
@@ -55,29 +55,6 @@ def capture!(*command)
   [stdout, stderr]
 end
 
-out.mkpath
-out.join('baseline').mkpath
-out.join('candidate').mkpath
-baseline_src = out.join('baseline/dos-uname-impl.S')
-candidate_src = source_root.join(HELPER)
-baseline_src.dirname.mkpath
-out.join('candidate').mkpath
-out.join('protected').mkpath
-baseline_text, = capture!('git', '-C', source_root, 'show', "#{BASELINE_REV}:#{HELPER}")
-baseline_src.write(baseline_text)
-
-build_ninja = out.join('build.ninja')
-fixture_asm = fixture_dir.join('runtime.S')
-ld_template = source_root.join('libgloss/ia16/dos-mt.ld.in')
-ld_script = out.join('runtime.ld')
-include_dir = source_root.join('libgloss/ia16')
-baseline_obj = out.join('baseline/dos-uname-impl.o')
-candidate_obj = out.join('candidate/dos-uname-impl.o')
-protected_obj = out.join('protected/dos-uname-impl.o')
-fixture_obj = out.join('runtime.o')
-baseline_com = out.join('baseline/CPU-PROBE.COM')
-candidate_com = out.join('candidate/CPU-PROBE.COM')
-
 def ninja_path(path)
   path.to_s.gsub('$', '$$').gsub(' ', '$ ').gsub(':', '$:')
 end
@@ -86,43 +63,10 @@ def shell_path(path)
   Shellwords.escape(path.to_s)
 end
 
-build_ninja.write(<<~NINJA)
-  ninja_required_version = 1.10
-  clang = #{shell_path(clang)}
-  lld = #{shell_path(lld)}
-  include_dir = #{shell_path(include_dir)}
-  linker_template = #{shell_path(ld_template)}
-  linker_script = #{ninja_path(ld_script)}
-
-  rule assemble
-    command = $clang --target=ia16-pc-msdos -march=8086 -D__IA16_CALLCVT_CDECL=1 -I $include_dir -c $in -o $out
-    description = AS $out
-
-  rule assemble_protected
-    command = $clang --target=ia16-pc-msdos -march=8086 -D__IA16_CALLCVT_CDECL=1 -D__IA16_FEATURE_PROTECTED_MODE=1 -I $include_dir -c $in -o $out
-    description = AS protected $out
-
-  rule make_linker_script
-    command = sh $linker_template -nostdlib -mclang-runtime > $out
-    description = SCRIPT $out
-
-  rule link_com
-    command = $lld -m elf_ia16 -T $linker_script $in -o $out
-    description = LINK $out
-
-  build #{ninja_path(ld_script)}: make_linker_script #{ninja_path(ld_template)}
-  build #{ninja_path(baseline_obj)}: assemble #{ninja_path(baseline_src)}
-  build #{ninja_path(candidate_obj)}: assemble #{ninja_path(candidate_src)}
-  build #{ninja_path(protected_obj)}: assemble_protected #{ninja_path(candidate_src)}
-  build #{ninja_path(fixture_obj)}: assemble #{ninja_path(fixture_asm)}
-  build #{ninja_path(baseline_com)}: link_com #{ninja_path(baseline_obj)} #{ninja_path(fixture_obj)} | #{ninja_path(ld_script)}
-  build #{ninja_path(candidate_com)}: link_com #{ninja_path(candidate_obj)} #{ninja_path(fixture_obj)} | #{ninja_path(ld_script)}
-  build images: phony #{ninja_path(baseline_com)} #{ninja_path(candidate_com)}
-  build protected: phony #{ninja_path(protected_obj)}
-  build all: phony images protected
-NINJA
-
-capture!('ninja', '-C', out, 'all')
+def section_bytes(object_path, section_name, objcopy, scratch)
+  capture!(objcopy, "--dump-section=#{section_name}=#{scratch}", object_path)
+  scratch.binread
+end
 
 def helper_code(object_path, nm, objcopy, scratch)
   symbols, = capture!(nm, '--defined-only', '--numeric-sort', object_path)
@@ -132,10 +76,8 @@ def helper_code(object_path, nm, objcopy, scratch)
   start = start_line.split.first.to_i(16)
   stop = stop_line.split.first.to_i(16)
   raise "invalid helper symbol range in #{object_path}" unless stop > start
-  section_file = scratch
-  capture!(objcopy, "--dump-section=.text=#{section_file}", object_path)
-  section = section_file.binread
-  section.byteslice(start, stop - start)
+  text = section_bytes(object_path, '.text', objcopy, scratch)
+  text.byteslice(start, stop - start)
 end
 
 def ordered_sequences?(bytes, sequences)
@@ -148,35 +90,159 @@ def ordered_sequences?(bytes, sequences)
   end
 end
 
-baseline_scratch = out.join('baseline-text.bin')
-candidate_scratch = out.join('candidate-text.bin')
-baseline_code = helper_code(baseline_obj, llvm_nm, llvm_objcopy, baseline_scratch)
-candidate_code = helper_code(candidate_obj, llvm_nm, llvm_objcopy, candidate_scratch)
+def symbols_for(nm, elf)
+  output, = capture!(nm, '--defined-only', '--numeric-sort', elf)
+  output.lines.each_with_object({}) do |line, symbols|
+    fields = line.split
+    symbols[fields.last] = fields.first.to_i(16) if fields.length >= 3 && fields.first.match?(/\A[0-9a-f]+\z/i)
+  end
+end
+
+def image_metadata(name, elf, image, nm)
+  symbols = symbols_for(nm, elf)
+  start = symbols.fetch('_start')
+  receipt = symbols.fetch('__ia16_cpu_receipt')
+  classes = symbols.fetch('__ia16_cpu_classes')
+  raise "#{name}: expected _start at VMA 0x100, got 0x#{start.to_s(16)}" unless start == 0x100
+  raise "#{name}: receipt classes are not 10 bytes after receipt" unless classes == receipt + 10
+  bytes = image.binread
+  offset = receipt - start
+  actual = bytes.byteslice(offset, RECEIPT_BYTES.length)
+  raise "#{name}: initialized receipt does not match documented layout" unless actual == RECEIPT_BYTES.pack('C*')
+  {
+    image: image.to_s,
+    image_sha256: Digest::SHA256.file(image).hexdigest,
+    entry_vma: start,
+    receipt_vma: receipt,
+    classes_vma: classes,
+    initial_receipt_hex: actual.unpack1('H*')
+  }
+end
+
+out.mkpath
+%w[baseline candidate protected].each { |dir| out.join(dir).mkpath }
+source_root_path = source_root.to_s
+baseline_src = out.join('baseline/dos-uname-impl.S')
+candidate_src = source_root.join(HELPER)
+baseline_text, = capture!('git', '-C', source_root, 'show', "#{BASELINE_REV}:#{HELPER}")
+baseline_src.write(baseline_text)
+
+fixture_asm = fixture_dir.join('runtime.S')
+ld_template = source_root.join('libgloss/ia16/dos-mt.ld.in')
+ld_script = out.join('runtime-elf.ld')
+ld_script_text, = capture!('sh', ld_template, '-nostdlib', '-mclang-runtime')
+unless ld_script_text.include?('OUTPUT_FORMAT(binary)')
+  abort 'DOS linker template did not contain OUTPUT_FORMAT(binary)'
+end
+ld_script.write(ld_script_text.sub('OUTPUT_FORMAT(binary)', 'OUTPUT_FORMAT(elf32-i386)'))
+
+baseline_obj = out.join('baseline/dos-uname-impl.o')
+candidate_obj = out.join('candidate/dos-uname-impl.o')
+protected_obj = out.join('protected/dos-uname-impl.o')
+dos_fixture_obj = out.join('runtime-dos.o')
+bare_fixture_obj = out.join('runtime-bare.o')
+baseline_dos_elf = out.join('baseline/dos.elf')
+candidate_dos_elf = out.join('candidate/dos.elf')
+baseline_bare_elf = out.join('baseline/bare.elf')
+candidate_bare_elf = out.join('candidate/bare.elf')
+baseline_dos_image = out.join('baseline/CPU-PROBE.COM')
+candidate_dos_image = out.join('candidate/CPU-PROBE.COM')
+baseline_bare_image = out.join('baseline/CPU-PROBE.BIN')
+candidate_bare_image = out.join('candidate/CPU-PROBE.BIN')
+
+build_ninja = out.join('build.ninja')
+include_dir = source_root.join('libgloss/ia16')
+build_ninja.write(<<~NINJA)
+  ninja_required_version = 1.10
+  clang = #{shell_path(clang)}
+  lld = #{shell_path(lld)}
+  objcopy = #{shell_path(llvm_objcopy)}
+  include_dir = #{shell_path(include_dir)}
+  linker_script = #{ninja_path(ld_script)}
+
+  rule assemble
+    command = $clang --target=ia16-pc-msdos -march=8086 -D__IA16_CALLCVT_CDECL=1 -I $include_dir -c $in -o $out
+    description = AS $out
+
+  rule assemble_bare
+    command = $clang --target=ia16-pc-msdos -march=8086 -D__IA16_CALLCVT_CDECL=1 -DIA16_CPU_BARE_EXIT=1 -I $include_dir -c $in -o $out
+    description = AS bare $out
+
+  rule assemble_protected
+    command = $clang --target=ia16-pc-msdos -march=8086 -D__IA16_CALLCVT_CDECL=1 -D__IA16_FEATURE_PROTECTED_MODE=1 -I $include_dir -c $in -o $out
+    description = AS protected $out
+
+  rule link_elf
+    command = $lld -m elf_ia16 -T $linker_script $in -o $out
+    description = LINK $out
+
+  rule raw_image
+    command = $objcopy -O binary $in $out
+    description = RAW $out
+
+  build #{ninja_path(baseline_obj)}: assemble #{ninja_path(baseline_src)}
+  build #{ninja_path(candidate_obj)}: assemble #{ninja_path(candidate_src)}
+  build #{ninja_path(protected_obj)}: assemble_protected #{ninja_path(candidate_src)}
+  build #{ninja_path(dos_fixture_obj)}: assemble #{ninja_path(fixture_asm)}
+  build #{ninja_path(bare_fixture_obj)}: assemble_bare #{ninja_path(fixture_asm)}
+
+  build #{ninja_path(baseline_dos_elf)}: link_elf #{ninja_path(baseline_obj)} #{ninja_path(dos_fixture_obj)} | #{ninja_path(ld_script)}
+  build #{ninja_path(candidate_dos_elf)}: link_elf #{ninja_path(candidate_obj)} #{ninja_path(dos_fixture_obj)} | #{ninja_path(ld_script)}
+  build #{ninja_path(baseline_bare_elf)}: link_elf #{ninja_path(baseline_obj)} #{ninja_path(bare_fixture_obj)} | #{ninja_path(ld_script)}
+  build #{ninja_path(candidate_bare_elf)}: link_elf #{ninja_path(candidate_obj)} #{ninja_path(bare_fixture_obj)} | #{ninja_path(ld_script)}
+  build #{ninja_path(baseline_dos_image)}: raw_image #{ninja_path(baseline_dos_elf)}
+  build #{ninja_path(candidate_dos_image)}: raw_image #{ninja_path(candidate_dos_elf)}
+  build #{ninja_path(baseline_bare_image)}: raw_image #{ninja_path(baseline_bare_elf)}
+  build #{ninja_path(candidate_bare_image)}: raw_image #{ninja_path(candidate_bare_elf)}
+  build images: phony #{ninja_path(baseline_dos_image)} #{ninja_path(candidate_dos_image)} #{ninja_path(baseline_bare_image)} #{ninja_path(candidate_bare_image)}
+  build protected: phony #{ninja_path(protected_obj)}
+  build all: phony images protected
+NINJA
+
+capture!('ninja', '-C', out, 'all')
+
+baseline_code = helper_code(baseline_obj, llvm_nm, llvm_objcopy, out.join('baseline-text.bin'))
+candidate_code = helper_code(candidate_obj, llvm_nm, llvm_objcopy, out.join('candidate-text.bin'))
 protected_code = helper_code(protected_obj, llvm_nm, llvm_objcopy, out.join('protected-text.bin'))
 baseline_ok = baseline_code&.include?(EXPECTED_BASELINE.pack('C*'))
 candidate_ok = candidate_code && ordered_sequences?(candidate_code, EXPECTED_CANDIDATE)
 protected_ok = protected_code && !protected_code.include?([0xfa].pack('C')) &&
   !protected_code.include?([0xd6].pack('C')) && !protected_code.include?([0xfe, 0x0f].pack('C*'))
-fixture_text = fixture_asm.read
-residues = fixture_text.scan(/^\s*probe\s+0xf00[0-9a-f],/i).length
+bare_text = section_bytes(bare_fixture_obj, '.startupA', llvm_objcopy, out.join('bare-startup.bin'))
+bare_exit_ok = bare_text.include?([0xe6, 0xf4].pack('C')) && !bare_text.include?([0xcd, 0x21].pack('C*'))
+runtime_text = fixture_asm.read
+residues = runtime_text.scan(/^\s*probe\s+0xf00[0-9a-f],/i).length
 raise "fixture has #{residues} SP residues, expected 16" unless residues == 16
 
+images = {
+  baseline_dos: image_metadata('baseline DOS image', baseline_dos_elf, baseline_dos_image, llvm_nm),
+  candidate_dos: image_metadata('candidate DOS image', candidate_dos_elf, candidate_dos_image, llvm_nm),
+  baseline_bare: image_metadata('baseline bare image', baseline_bare_elf, baseline_bare_image, llvm_nm),
+  candidate_bare: image_metadata('candidate bare image', candidate_bare_elf, candidate_bare_image, llvm_nm)
+}
 report = {
   baseline_revision: BASELINE_REV,
   baseline_source_sha256: Digest::SHA256.hexdigest(baseline_text),
   candidate_source_sha256: Digest::SHA256.file(candidate_src).hexdigest,
   baseline_object_sha256: Digest::SHA256.file(baseline_obj).hexdigest,
   candidate_object_sha256: Digest::SHA256.file(candidate_obj).hexdigest,
-  fixture_object_sha256: Digest::SHA256.file(fixture_obj).hexdigest,
-  baseline_com_sha256: Digest::SHA256.file(baseline_com).hexdigest,
-  candidate_com_sha256: Digest::SHA256.file(candidate_com).hexdigest,
+  protected_object_sha256: Digest::SHA256.file(protected_obj).hexdigest,
+  dos_fixture_object_sha256: Digest::SHA256.file(dos_fixture_obj).hexdigest,
+  bare_fixture_object_sha256: Digest::SHA256.file(bare_fixture_obj).hexdigest,
   baseline_bug_sequence_found: !!baseline_ok,
   candidate_repair_sequence_found: !!candidate_ok,
   protected_mode_probe_absent: !!protected_ok,
-  fixture_stack_residues: residues,
+  bare_exit_is_out_f4_al_without_int21: !!bare_exit_ok,
+  stack_residues: residues,
   scratch_marker_checked_residues: 14,
-  candidate_result: candidate_ok && protected_ok ? 'object-repair-sequences-present' : 'RED: required repair sequence is absent'
+  receipt_layout: {
+    magic: 'IA24', version: 1, status_pending: 0, status_pass: 1,
+    status_fail: 2, case_count: 16, failure_index: 0xff,
+    expected_class_offset: 8, classes_offset: 10,
+    class_width_bytes: 2, class_order: 'entry SP residue 0 through 15'
+  },
+  images: images
 }
 out.join('results.json').write(JSON.pretty_generate(report) + "\n")
 puts JSON.pretty_generate(report)
-exit(candidate_ok && protected_ok ? 0 : 1)
+exit(baseline_ok && candidate_ok && protected_ok && bare_exit_ok ? 0 : 1)
