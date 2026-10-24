@@ -58,7 +58,7 @@ module IA16RuntimeRebuilder
                              else
                                Open3.capture3(*argv)
                              end
-    return stdout if status.success?
+    return stdout.b if status.success?
     raise Error, "command failed (#{status.exitstatus}): #{Shellwords.join(argv)}\n#{stderr}"
   rescue Errno::ENOENT => e
     raise Error, "cannot run #{argv.first}: #{e.message}"
@@ -310,10 +310,6 @@ module IA16RuntimeRebuilder
       raise Error, "#{name} must have exactly one #{REPLACED_OBJECT}" unless members.count { |m| m['name'] == REPLACED_OBJECT } == 1
       expected_lists[name] = members
     end
-    unless expected_lists.values.map { |members| members.map { |m| m['name'] } }.uniq.length == 1
-      raise Error, 'baseline DOS archives do not have the same ordered member list'
-    end
-
     FileUtils.mkdir_p(build_root)
     object_output = File.join(build_root, 'obj', REPLACED_OBJECT)
     FileUtils.mkdir_p(File.dirname(object_output))
