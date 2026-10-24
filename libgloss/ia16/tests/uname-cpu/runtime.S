@@ -35,7 +35,7 @@
 	movw	%ds, %dx
 	cmpw	%bp, %dx
 	jne	.fail
-	cmpw	$0x5aa5, %cs:0x1000
+	cmpw	$0x5aa5, %cs:0x2000
 	jne	.fail
 	.if \check_scratch
 	cmpb	$0xa5, %ss:(%bx)
@@ -60,10 +60,10 @@ _start:
 	movw	%cs, %ax
 	movw	%ax, %ss
 	movw	$0xf000, %sp
-	addw	$0x100, %ax
+	addw	$0x200, %ax
 	movw	%ax, %bp
 	movw	%ax, %ds
-	movw	$0x5aa5, %cs:0x1000
+	movw	$0x5aa5, %cs:0x2000
 
 	/* The entry SP is varied through all residues modulo 16. The helper's
 	   alias byte is floor((entry SP - 8 - 1) / 16) * 16: CALL, saved BX,

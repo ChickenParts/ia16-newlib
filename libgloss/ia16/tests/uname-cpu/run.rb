@@ -103,8 +103,12 @@ def image_metadata(name, elf, image, nm)
   start = symbols.fetch('_start')
   receipt = symbols.fetch('__ia16_cpu_receipt')
   classes = symbols.fetch('__ia16_cpu_classes')
+  image_end = [symbols.fetch('__etext'), symbols.fetch('__edata'),
+               symbols.fetch('__ebss'), start + image.size].max
   raise "#{name}: expected _start at VMA 0x100, got 0x#{start.to_s(16)}" unless start == 0x100
   raise "#{name}: receipt classes are not 10 bytes after receipt" unless classes == receipt + 10
+  raise "#{name}: image end 0x#{image_end.to_s(16)} overlaps DS sentinel at CS:2000" unless image_end < 0x2000
+  raise "#{name}: image end 0x#{image_end.to_s(16)} reaches the test stack at CS:f000" unless image_end < 0xf000
   bytes = image.binread
   offset = receipt - start
   actual = bytes.byteslice(offset, RECEIPT_BYTES.length)
@@ -115,6 +119,9 @@ def image_metadata(name, elf, image, nm)
     entry_vma: start,
     receipt_vma: receipt,
     classes_vma: classes,
+    image_end_vma: image_end,
+    image_end_vma_hex: format('0x%x', image_end),
+    ds_sentinel_cs_offset: 0x2000,
     initial_receipt_hex: actual.unpack1('H*')
   }
 end

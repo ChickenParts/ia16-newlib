@@ -1,9 +1,10 @@
 # DOS CPU classifier stack and segment regression
 
-This fixture calls `__ia16_get_hw_cpu` with `DS != SS`. It records the helper's
-raw AX result, checks the existing 0 through 3 class range, requires one class
-to remain stable over all sixteen entry-SP residues, and checks DS, IF, DF, the
-`DS:0000` sentinel, and the stack-alias byte. The stack marker is checked on
+This fixture calls `__ia16_get_hw_cpu` with `DS = CS + 0x200` and `SS = CS`. It
+records the helper's raw AX result, checks the existing 0 through 3 class
+range, requires one class to remain stable over all sixteen entry-SP residues,
+and checks DS, IF, DF, the sentinel at `CS:0x2000`, and the stack-alias byte.
+The stack marker is checked on
 fourteen residues: for residues 9 and 10, the alias byte overlaps an earlier
 `push AX` or `push SP`, so its value before the helper is not an appropriate
 restore expectation. Those residues still run the class, DS, and flag checks.
@@ -30,7 +31,9 @@ It restores DS to CS and clears DF before using DOS output. The bare image
 outputs AL to port `0xf4` (0 for pass, 1 for fail), then halts. Load the bare
 binary at `CS:0100`; its entry VMA is 0x100. `results.json` records the receipt
 and class-array VMAs reported by `llvm-nm` for all four images, along with
-image hashes and receipt layout.
+image hashes and receipt layout. The runner also checks from the ELF end
+symbols and raw image size that every image ends below `CS:0x2000`, where the
+data sentinel resides, and below the stack at `CS:0xf000`.
 
 The Ruby runner generates a Ninja file and builds baseline and candidate DOS
 COM images and bare binaries, plus a protected-mode object. It obtains the
