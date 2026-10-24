@@ -32,6 +32,16 @@ __ia16_get_hw_cpu:
 	 * a 286 or above.
 	 */
 #else
+	/*
+	 * The NEC D6/XLAT probe reads through DS, but its zero byte is on the
+	 * stack. Use SS for the real-mode probes, keeping interrupts disabled
+	 * until both DS and FLAGS have been restored.
+	 */
+	pushfw
+	cli
+	pushw	%ds
+	pushw	%ss
+	popw	%ds
 	xorw	%ax,	%ax
 	/*
 	 * Detect an NEC V20 or V30.  The opcode 0xd6 is `setalc'/`salc' on
@@ -59,8 +69,9 @@ __ia16_get_hw_cpu:
 	 * Try to tell between an 8086 & a 186, while avoiding the use of
 	 * invalid instructions.  Use the fact that a word write at offset
 	 * 0xffff in a segment wraps around on an 8086 but not on a 186
-	 * (www.rcollins.org/ddj/Nov96/Nov96.html).  We frob a byte that is
-	 * just above our current stack top.
+	 * (www.rcollins.org/ddj/Nov96/Nov96.html).  We frob the byte at the
+	 * paragraph boundary 1 to 16 bytes below the current SP.  FLAGS and DS
+	 * have already been saved above this scratch byte.
 	 */
 	movw	%ss,	%ax
 	movw	%sp,	%dx
@@ -68,15 +79,11 @@ __ia16_get_hw_cpu:
 	movb	$4,	%cl
 	shrw	%cl,	%dx
 	addw	%dx,	%ax
-	movw	%ds,	%ax
-	pushfw
-	cli
+	movw	%ax,	%ds
 	movw	-1(%bx), %dx		/* %bx = 0 from above */
 	decb	(%bx)
 	movw	-1(%bx), %ax
-	popfw
-	pushw	%ss
-	popw	%ds
+	incb	(%bx)
 	cmpw	%dx,	%ax
 	jz	.i186
 	movb	$HW_I86, %al
@@ -91,6 +98,10 @@ __ia16_get_hw_cpu:
 .i286:
 #endif
 	movb	$HW_I286, %al
+#if ! defined __IA16_FEATURE_PROTECTED_MODE
+	popw	%ds
+	popfw
+#endif
 	cbtw
 #ifdef __clang__
 	popw	%bx

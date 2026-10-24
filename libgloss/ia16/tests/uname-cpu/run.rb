@@ -22,19 +22,10 @@ EXPECTED_BASELINE = [
   0x16, 0x1f        # push %ss; pop %ds, losing entry DS
 ].freeze
 EXPECTED_CANDIDATE = [
-  0x9c, 0xfa, 0x1e, # save FLAGS, disable interrupts, save entry DS
-  0x8c, 0xd0,       # mov %ss, %ax
-  0x89, 0xe2,       # mov %sp, %dx
-  0x4a,             # dec %dx
-  0xb1, 0x04,       # mov $4, %cl
-  0xd3, 0xea,       # shr %cl, %dx
-  0x01, 0xd0,       # add %dx, %ax
-  0x8e, 0xd8,       # mov %ax, %ds (keep the computed alias)
-  0x8b, 0x57, 0xff, # read the word across offset ffff
-  0xfe, 0x0f,       # decrement the alias byte
-  0x8b, 0x47, 0xff, # read the word again
-  0xfe, 0x07,       # restore the alias byte
-  0x1f, 0x9d        # restore DS, then FLAGS
+  [0x9c, 0xfa, 0x1e, 0x16, 0x1f], # save flags/DS, then normalize DS to SS
+  [0x8c, 0xd0, 0x89, 0xe2, 0x4a, 0xb1, 0x04, 0xd3, 0xea, 0x01, 0xd0,
+   0x8e, 0xd8, 0x8b, 0x57, 0xff, 0xfe, 0x0f, 0x8b, 0x47, 0xff, 0xfe, 0x07],
+  [0xb0, 0x03, 0x1f, 0x9d, 0x98] # final class byte, restore DS/FLAGS, sign extend
 ].freeze
 
 options = {}
@@ -147,13 +138,23 @@ def helper_code(object_path, nm, objcopy, scratch)
   section.byteslice(start, stop - start)
 end
 
+def ordered_sequences?(bytes, sequences)
+  offset = 0
+  sequences.all? do |sequence|
+    found = bytes.index(sequence.pack('C*'), offset)
+    next false unless found
+    offset = found + sequence.length
+    true
+  end
+end
+
 baseline_scratch = out.join('baseline-text.bin')
 candidate_scratch = out.join('candidate-text.bin')
 baseline_code = helper_code(baseline_obj, llvm_nm, llvm_objcopy, baseline_scratch)
 candidate_code = helper_code(candidate_obj, llvm_nm, llvm_objcopy, candidate_scratch)
 protected_code = helper_code(protected_obj, llvm_nm, llvm_objcopy, out.join('protected-text.bin'))
 baseline_ok = baseline_code&.include?(EXPECTED_BASELINE.pack('C*'))
-candidate_ok = candidate_code&.include?(EXPECTED_CANDIDATE.pack('C*'))
+candidate_ok = candidate_code && ordered_sequences?(candidate_code, EXPECTED_CANDIDATE)
 protected_ok = protected_code && !protected_code.include?([0xfa].pack('C')) &&
   !protected_code.include?([0xd6].pack('C')) && !protected_code.include?([0xfe, 0x0f].pack('C*'))
 fixture_text = fixture_asm.read
