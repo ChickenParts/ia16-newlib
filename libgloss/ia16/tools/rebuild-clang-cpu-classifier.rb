@@ -19,6 +19,8 @@ module IA16RuntimeRebuilder
   BASELINE_PREFIX = '/mnt/build/ia16-dos-runtime-f0add85'
   BASELINE_SOURCE = '/mnt/build/ia16-dos-runtime-f0add85-source'
   TARGET = 'ia16-pc-msdos'
+  SMALL_SCRIPT_TEMPLATE = 'libgloss/ia16/dos-mx.ld.in'
+  SMALL_SCRIPT_OUTPUT = File.join(TARGET, 'lib', 'dos-clang-small.ld')
   ARCHIVE_NAMES = %w[libdos-s.a libdos-t.a].freeze
   REPLACED_OBJECT = 'dos-uname-impl.o'
   EXPECTED_ARCHIVE_MEMBERS = 46
@@ -142,6 +144,50 @@ module IA16RuntimeRebuilder
     true
   end
 
+  def small_script_plan(source_root)
+    template = File.join(File.expand_path(source_root), SMALL_SCRIPT_TEMPLATE)
+    raise Error, "small-model linker script template is missing: #{template}" unless File.file?(template)
+    {
+      'small_script_template' => template,
+      'small_script_template_sha256' => sha256(template),
+      'small_script_generator_argv' => ['sh', template, '-nostdlib', '-mclang-runtime'],
+      'small_script_output_relative_path' => SMALL_SCRIPT_OUTPUT
+    }
+  end
+
+  def validate_small_script_plan!(plan)
+    expected_template = File.join(File.expand_path(plan.fetch('source_root')), SMALL_SCRIPT_TEMPLATE)
+    unless plan.fetch('small_script_template') == expected_template
+      raise Error, 'small-model linker script template path differs from the selected source tree'
+    end
+    unless plan.fetch('small_script_output_relative_path') == SMALL_SCRIPT_OUTPUT
+      raise Error, 'small-model linker script output path differs from the maintained prefix path'
+    end
+    true
+  end
+
+  def generate_small_linker_script!(template:, expected_sha256:, generator_argv:, output_path:)
+    template = File.expand_path(template)
+    raise Error, "small-model linker script template is missing: #{template}" unless File.file?(template)
+    unless sha256(template) == expected_sha256
+      raise Error, "small-model linker script template changed after plan generation: #{template}"
+    end
+    expected_argv = ['sh', template, '-nostdlib', '-mclang-runtime']
+    unless generator_argv == expected_argv
+      raise Error, 'small-model linker script generator argv differs from the pinned command'
+    end
+    output = capture!(*generator_argv)
+    FileUtils.mkdir_p(File.dirname(output_path))
+    File.binwrite(output_path, output)
+    {
+      'source_template' => template,
+      'source_template_sha256' => expected_sha256,
+      'generator_argv' => generator_argv,
+      'output_path' => File.expand_path(output_path),
+      'output_sha256' => sha256(output_path)
+    }
+  end
+
   def compile_argv(compiler:, source_file:, source_root:, baseline_build:, tool_root:,
                    resource_dir:, output_path:)
     source_root = File.expand_path(source_root)
@@ -202,8 +248,12 @@ module IA16RuntimeRebuilder
     end
     stage_stamp = plan.fetch('stage_stamp')
     builtins = plan.fetch('builtins_file')
+    stage_inputs = plan.fetch('archive_outputs').values + [builtins]
+    if plan.fetch('regenerate_small_linker_script', false)
+      stage_inputs << plan.fetch('small_script_template')
+    end
     lines << "build #{ninja_escape(stage_stamp)}: run_command " +
-      (plan.fetch('archive_outputs').values + [builtins]).map { |path| ninja_escape(path) }.join(' ')
+      stage_inputs.map { |path| ninja_escape(path) }.join(' ')
     lines << "  cmd = #{ninja_escape(plan.fetch('stage_command'))}"
     lines << '  description = stage incremental candidate prefix'
     lines << "build stage-candidate: phony #{ninja_escape(stage_stamp)}"
@@ -232,6 +282,7 @@ module IA16RuntimeRebuilder
   end
 
   def run_cli(options)
+    regenerate_small_linker_script = options.fetch(:regenerate_small_linker_script, false)
     source_root = validate_simple_path!(options.fetch(:source_root), '--source-root')
     baseline_build = validate_simple_path!(options.fetch(:baseline_build), '--baseline-build')
     baseline_prefix = validate_simple_path!(options.fetch(:baseline_prefix), '--baseline-prefix')
@@ -330,6 +381,7 @@ module IA16RuntimeRebuilder
     end
     profile_hash = sha256(profile_path)
     plan = {
+      'regenerate_small_linker_script' => regenerate_small_linker_script,
       'source_commit' => source_commit,
       'source_root' => source_root,
       'source_file' => new_source,
@@ -366,6 +418,7 @@ module IA16RuntimeRebuilder
       'plan_file' => File.join(build_root, 'rebuild-plan.json'),
       'helper_file' => File.expand_path(__FILE__)
     }
+    plan.merge!(small_script_plan(source_root)) if regenerate_small_linker_script
     plan['stage_command'] = Shellwords.join([RbConfig.ruby, plan['helper_file'], '--internal', 'stage', plan['plan_file']])
     plan['seal_command'] = Shellwords.join([RbConfig.ruby, plan['helper_file'], '--internal', 'seal', plan['plan_file']])
     plan['archive_member_records'] = expected_lists.transform_values do |members|
@@ -410,6 +463,16 @@ module IA16RuntimeRebuilder
     builtins_dst = File.join(prefix, TARGET, 'lib', BUILTINS_NAME)
     FileUtils.cp(plan.fetch('builtins_file'), builtins_dst, preserve: true)
 
+    small_script_record = nil
+    if plan.fetch('regenerate_small_linker_script', false)
+      validate_small_script_plan!(plan)
+      small_script_record = generate_small_linker_script!(
+        template: plan.fetch('small_script_template'),
+        expected_sha256: plan.fetch('small_script_template_sha256'),
+        generator_argv: plan.fetch('small_script_generator_argv'),
+        output_path: File.join(prefix, plan.fetch('small_script_output_relative_path')))
+    end
+
     %w[profile.sh header-profile/profile.sh].each do |relative|
       path = File.join(prefix, relative)
       next unless File.file?(path)
@@ -420,6 +483,9 @@ module IA16RuntimeRebuilder
     end
     allowed = ARCHIVE_NAMES.map { |name| "#{TARGET}/lib/#{name}" } +
       ["#{TARGET}/lib/#{BUILTINS_NAME}", 'profile.sh', 'header-profile/profile.sh']
+    if small_script_record
+      allowed << plan.fetch('small_script_output_relative_path')
+    end
     verify_unchanged_files!(baseline, prefix, allowed_changes: allowed)
 
     object_path = File.join(plan.fetch('object_output'))
@@ -451,6 +517,7 @@ module IA16RuntimeRebuilder
       'prefix_tree_sha256' => tree_sha256(prefix),
       'qualification' => 'pending external VM acceptance; this is not a full rebuild or header requalification'
     }
+    manifest['regenerated_small_linker_script'] = small_script_record if small_script_record
     File.write(plan.fetch('manifest_file'), JSON.pretty_generate(manifest) + "\n")
     profile = {
       'status' => manifest.fetch('status'),
@@ -481,6 +548,7 @@ module IA16RuntimeRebuilder
       'candidate_manifest_sha256' => sha256(plan.fetch('manifest_file')),
       'qualification' => manifest.fetch('qualification')
     }
+    profile['regenerated_small_linker_script'] = small_script_record if small_script_record
     File.write(plan.fetch('profile_file'), JSON.pretty_generate(profile) + "\n")
     File.write(plan.fetch('stage_stamp'), "#{sha256(plan.fetch('manifest_file'))}\n")
     puts "Staged candidate prefix: #{prefix}"
@@ -527,7 +595,7 @@ module IA16RuntimeRebuilder
     end
     options = {}
     parser = OptionParser.new do |opts|
-      opts.banner = 'Usage: rebuild-clang-cpu-classifier.rb --source-root PATH --baseline-build PATH --baseline-prefix PATH --tool-root PATH --build-root PATH --install-prefix PATH'
+      opts.banner = 'Usage: rebuild-clang-cpu-classifier.rb --source-root PATH --baseline-build PATH --baseline-prefix PATH --tool-root PATH --build-root PATH --install-prefix PATH [--regenerate-small-linker-script]'
       {
         '--source-root PATH' => :source_root,
         '--baseline-build PATH' => :baseline_build,
@@ -536,6 +604,10 @@ module IA16RuntimeRebuilder
         '--build-root PATH' => :build_root,
         '--install-prefix PATH' => :install_prefix
       }.each { |switch, key| opts.on(switch) { |value| options[key] = value } }
+      opts.on('--regenerate-small-linker-script',
+              'Regenerate only dos-clang-small.ld from this source tree') do
+        options[:regenerate_small_linker_script] = true
+      end
       opts.on('-h', '--help', 'Show this help') { puts opts; exit 0 }
     end
     parser.parse!(argv)

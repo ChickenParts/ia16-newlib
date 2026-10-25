@@ -82,18 +82,82 @@ class IA16RuntimeRebuilderTest < Minitest::Test
       File.binwrite(File.join(root, 'ia16-pc-msdos/lib/dos-s-c0.o'), "startup fixture\n")
       File.binwrite(File.join(root, 'ia16-pc-msdos/include/stdio.h'), "header fixture\n")
       File.binwrite(File.join(root, 'ia16-pc-msdos/lib/libdos-s.a'), "archive fixture\n")
+      File.binwrite(File.join(root, 'ia16-pc-msdos/lib/libdos-t.a'), "tiny archive fixture\n")
+      File.binwrite(File.join(root, 'ia16-pc-msdos/lib/dos-clang-small.ld'), "small linker script\n")
+      File.binwrite(File.join(root, 'ia16-pc-msdos/lib/dos-clang-tiny.ld'), "tiny linker script\n")
     end
     File.binwrite(File.join(candidate, 'ia16-pc-msdos/lib/libdos-s.a'), "updated archive\n")
-    changed = ['ia16-pc-msdos/lib/libdos-s.a']
+    File.binwrite(File.join(candidate, 'ia16-pc-msdos/lib/libdos-t.a'), "updated tiny archive\n")
+    File.binwrite(File.join(candidate, 'ia16-pc-msdos/lib/dos-clang-small.ld'), "regenerated small linker script\n")
+    changed = %w[
+      ia16-pc-msdos/lib/libdos-s.a
+      ia16-pc-msdos/lib/libdos-t.a
+      ia16-pc-msdos/lib/dos-clang-small.ld
+    ]
 
     assert IA16RuntimeRebuilder.verify_unchanged_files!(baseline, candidate,
       allowed_changes: changed)
+    assert_equal File.binread(File.join(baseline, 'ia16-pc-msdos/lib/dos-clang-tiny.ld')),
+      File.binread(File.join(candidate, 'ia16-pc-msdos/lib/dos-clang-tiny.ld'))
+    File.binwrite(File.join(candidate, 'ia16-pc-msdos/lib/dos-clang-tiny.ld'), "changed tiny script\n")
+    error = assert_raises(IA16RuntimeRebuilder::Error) do
+      IA16RuntimeRebuilder.verify_unchanged_files!(baseline, candidate,
+        allowed_changes: changed)
+    end
+    assert_match(/unexpected staged file changes/, error.message)
+    File.binwrite(File.join(candidate, 'ia16-pc-msdos/lib/dos-clang-tiny.ld'), "tiny linker script\n")
     File.binwrite(File.join(candidate, 'ia16-pc-msdos/include/stdio.h'), "changed header\n")
     error = assert_raises(IA16RuntimeRebuilder::Error) do
       IA16RuntimeRebuilder.verify_unchanged_files!(baseline, candidate,
         allowed_changes: changed)
     end
     assert_match(/unexpected staged file changes/, error.message)
+  end
+
+  def test_small_linker_script_plan_pins_template_and_generated_output
+    source_root = File.expand_path('../../../..', __dir__)
+    template = File.join(source_root, 'libgloss/ia16/dos-mx.ld.in')
+    plan = IA16RuntimeRebuilder.small_script_plan(source_root)
+    output = File.join(@directory, 'ia16-pc-msdos/lib/dos-clang-small.ld')
+
+    assert_equal template, plan.fetch('small_script_template')
+    assert_equal IA16RuntimeRebuilder.sha256(template),
+      plan.fetch('small_script_template_sha256')
+    assert_equal ['sh', template, '-nostdlib', '-mclang-runtime'],
+      plan.fetch('small_script_generator_argv')
+    assert_equal File.join('ia16-pc-msdos', 'lib', 'dos-clang-small.ld'),
+      plan.fetch('small_script_output_relative_path')
+    assert IA16RuntimeRebuilder.validate_small_script_plan!(
+      plan.merge('source_root' => source_root))
+
+    record = IA16RuntimeRebuilder.generate_small_linker_script!(
+      template: plan.fetch('small_script_template'),
+      expected_sha256: plan.fetch('small_script_template_sha256'),
+      generator_argv: plan.fetch('small_script_generator_argv'),
+      output_path: output)
+    generated = File.binread(output)
+    assert_includes generated, 'OUTPUT_FORMAT(binary)'
+    assert_equal IA16RuntimeRebuilder.sha256(output), record.fetch('output_sha256')
+    assert_equal plan.fetch('small_script_template_sha256'),
+      record.fetch('source_template_sha256')
+    assert_equal plan.fetch('small_script_generator_argv'), record.fetch('generator_argv')
+  end
+
+  def test_small_linker_script_generation_rejects_changed_source_identity
+    template = File.join(@directory, 'dos-mx.ld.in')
+    File.write(template, "#!/bin/sh\nprintf 'original\\n'\n")
+    expected_sha256 = IA16RuntimeRebuilder.sha256(template)
+    generator_argv = ['sh', template, '-nostdlib', '-mclang-runtime']
+    File.write(template, "#!/bin/sh\nprintf 'changed\\n'\n")
+
+    error = assert_raises(IA16RuntimeRebuilder::Error) do
+      IA16RuntimeRebuilder.generate_small_linker_script!(
+        template: template, expected_sha256: expected_sha256,
+        generator_argv: generator_argv,
+        output_path: File.join(@directory, 'dos-clang-small.ld'))
+    end
+    assert_match(/changed after plan generation/, error.message)
+    refute File.exist?(File.join(@directory, 'dos-clang-small.ld'))
   end
 
   def test_compile_arguments_only_use_explicit_current_tool_paths
@@ -147,6 +211,16 @@ class IA16RuntimeRebuilderTest < Minitest::Test
     }
     File.write(File.join(@directory, 'build.ninja'),
       IA16RuntimeRebuilder.render_ninja(plan))
+
+    template = File.join(@directory, 'source/dos-mx.ld.in')
+    default_graph = File.read(File.join(@directory, 'build.ninja'))
+    refute_includes default_graph, template
+    plan['regenerate_small_linker_script'] = true
+    plan['small_script_template'] = template
+    regenerated_graph = IA16RuntimeRebuilder.render_ninja(plan)
+    stage_rule = regenerated_graph.lines.find { |line| line.start_with?('build candidate-stage.stamp:') }
+    assert_includes stage_rule, template
+    File.write(File.join(@directory, 'build.ninja'), regenerated_graph)
 
     stdout, stderr, status = Open3.capture3('ninja', '-C', @directory, '-t', 'targets')
 

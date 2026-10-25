@@ -6,11 +6,22 @@ archives against its standalone object before making a Ninja graph. It then
 compiles the committed source with the selected maintained Clang, rebuilds the
 two archives from the verified baseline objects, and stages a fresh prefix.
 
-The f0add85 source, build, and installed prefix are immutable inputs. The
-candidate keeps the existing libc, startup objects, and header tree byte for
-byte; the generated manifest records their hashes and the new object/archive
-hashes. This is an incremental runtime candidate, not a full runtime rebuild or
-a new header qualification. The install prefix must not exist before staging.
+The f0add85 source, build, and installed prefix are immutable inputs. By
+default, the candidate keeps the existing linker scripts, libc, startup objects,
+and header tree byte for byte; the generated manifest records their hashes and
+the new object/archive hashes. This is an incremental runtime candidate, not a
+full runtime rebuild or a new header qualification. The install prefix must not
+exist before staging.
+
+The optional `--regenerate-small-linker-script` flag opts into refreshing only
+`ia16-pc-msdos/lib/dos-clang-small.ld` from the selected source tree's
+`libgloss/ia16/dos-mx.ld.in`. The plan pins the template SHA256 and exact
+generator argv (`sh TEMPLATE -nostdlib -mclang-runtime`); the `stage-candidate`
+Ninja edge depends on that template, and staging rejects a source hash change
+after planning. The staged manifest and build profile record the template,
+generator, and generated-script hashes. The tiny linker script and every other
+baseline file remain subject to the existing unchanged-file check. The
+default-off path preserves the Issue 241 staging behavior.
 
 ## Generate and stage
 
@@ -24,7 +35,8 @@ ruby libgloss/ia16/tools/rebuild-clang-cpu-classifier.rb \
   --baseline-prefix /mnt/build/ia16-dos-runtime-f0add85 \
   --tool-root /mnt/build/llvm/handoffs/ia16-7c0a6c568bd6-flags-20261024 \
   --build-root /mnt/build/llvm/issue241-incremental-runtime-build \
-  --install-prefix /mnt/build/ia16-dos-runtime-issue241-candidate
+  --install-prefix /mnt/build/ia16-dos-runtime-issue241-candidate \
+  --regenerate-small-linker-script
 
 ninja -C /mnt/build/llvm/issue241-incremental-runtime-build stage-candidate
 ```
