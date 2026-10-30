@@ -399,19 +399,20 @@ module IA16ClangSysroot
         sysroot = @install / TARGET / name
         compile = [@clang, "--target=#{TARGET}", "--sysroot=#{sysroot}", '-march=8086',
                    "-mmemory-model=#{model}", '-std=gnu23', '-Os', '-femulated-tls',
-                   '-ffreestanding', '-fno-builtin', '-nostdinc', '-isystem', sysroot / 'include',
+                   '-ffreestanding', '-fno-builtin', '-ffunction-sections', '-fdata-sections',
+                   '-nostdinc', '-isystem', sysroot / 'include',
                    '-isystem', sysroot / 'include/newlib', '-isystem', @resource_dir / 'include']
         profiles << "ia16_clang_#{model}() {"
         profiles << "  #{Shellwords.join(compile.map(&:to_s))} \"$@\""
         profiles << '}'
         linker = [@clang, "--target=#{TARGET}", "--sysroot=#{sysroot}", '-march=8086',
-                  "-mmemory-model=#{model}", '-fuse-ld=lld', '-nostdlib', '-Wl,-m,elf_ia16',
+                  "-mmemory-model=#{model}", "-resource-dir=#{@builtins_root}",
+                  '-fuse-ld=lld', '-Wl,-m,elf_ia16',
                   '-Wl,-T,' + (sysroot / 'lib' / config.fetch(:linker_script)).to_s,
                   '-L', sysroot / 'lib', sysroot / 'lib' / config.fetch(:startup)]
-        linker << '-Wl,--oformat=mz' unless model == :tiny
+        linker << (model == :tiny ? '-Wl,--oformat=binary' : '-Wl,--oformat=mz')
         library = config.fetch(:bsp).sub(/\Alib/, '').sub(/\.a\z/, '')
-        tail = ['-Wl,--start-group', '-lc', "-l#{library}", '-lm',
-                sysroot / 'lib/libclang_rt.builtins-ia16.a', '-Wl,--end-group']
+        tail = ['-Wl,--start-group', '-lc', "-l#{library}", '-lm', '-Wl,--end-group']
         profiles << "ia16_link_#{model}() {"
         profiles << "  #{Shellwords.join(linker.map(&:to_s))} \"$@\" #{Shellwords.join(tail.map(&:to_s))}"
         profiles << '}'
@@ -420,10 +421,13 @@ module IA16ClangSysroot
         direct += ['-T',
                   sysroot / 'lib' / config.fetch(:linker_script), '-L', sysroot / 'lib',
                   sysroot / 'lib' / config.fetch(:startup)]
-        direct_tail = ['--start-group', '-lc', "-l#{library}", '-lm',
-                       sysroot / 'lib/libclang_rt.builtins-ia16.a', '--end-group']
+        direct_tail = ['--start-group', '-lc', "-l#{library}", '-lm']
+        query = [@clang, "--target=#{TARGET}", "-mmemory-model=#{model}",
+                 "-resource-dir=#{@builtins_root}", '--print-libgcc-file-name']
         profiles << "ia16_direct_link_#{model}() {"
-        profiles << "  #{Shellwords.join(direct.map(&:to_s))} \"$@\" #{Shellwords.join(direct_tail.map(&:to_s))}"
+        profiles << "  ia16_builtins=$(#{Shellwords.join(query.map(&:to_s))}) || return"
+        profiles << '  test -f "$ia16_builtins" || return 1'
+        profiles << "  #{Shellwords.join(direct.map(&:to_s))} \"$@\" #{Shellwords.join(direct_tail.map(&:to_s))} \"$ia16_builtins\" --end-group"
         profiles << '}'
       end
       File.write(@install / 'profile.sh', profiles.join("\n") + "\n")
