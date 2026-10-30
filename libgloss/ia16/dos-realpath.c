@@ -111,11 +111,11 @@ static const char *__msdos_parse_to_fcb (const char *name, struct fcb *fcb)
   const char *end;
 
 #ifndef __IA16_FEATURE_DOSX
-  uint16_t ax;
+  uint16_t ax, end_offset;
 
   memset (fcb, 0, sizeof (struct fcb));
   __asm volatile ("int $0x21"
-		  : "=a" (ax), "=S" (end)
+		  : "=a" (ax), "=S" (end_offset)
 		  : "0" (0x2900u),
 		    "Rds" (FP_SEG (name)), "1" (FP_OFF (name)),
 		    "e" (FP_SEG (fcb)), "D" (FP_OFF (fcb))
@@ -123,6 +123,7 @@ static const char *__msdos_parse_to_fcb (const char *name, struct fcb *fcb)
 
   if ((uint8_t) ax > 1)
     return NULL;
+  end = (const char *) (((unsigned long) FP_SEG (name) << 16) | end_offset);
 #else
   rm_call_struct rmc;
   __far void *tb = __dosx_tb (), *tb_end = __dosx_tb_end ();

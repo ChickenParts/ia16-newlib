@@ -44,7 +44,7 @@
 #define MK_FP(s, o) ((void __far *) ((unsigned long) (unsigned) (s) << 16 | \
 				     (unsigned) (o)))
 #endif
-#ifndef __IA16_CMODEL_IS_FAR_TEXT
+#if !defined(__IA16_CMODEL_IS_FAR_TEXT) && !defined(__FAR_CODE__)
 #define CALL_DPMI16_SHIM(opd) "callw *%" #opd
 #else
 #define CALL_DPMI16_SHIM(opd) "lcallw *%" #opd

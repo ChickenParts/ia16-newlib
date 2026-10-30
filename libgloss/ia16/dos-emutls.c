@@ -1,13 +1,9 @@
-/* Single-thread emulated TLS for the DOS near-data runtime.
+/* Single-thread emulated TLS for DOS real-mode memory models.
    The four fields match LLVM LowerEmuTLS and the libgcc control ABI.
    DOS owns one C execution thread per process; storage lives until exit. */
 #include <stdint.h>
 #include <stdlib.h>
 #include <string.h>
-
-#if defined(__ia16__) || defined(__IA16__)
-_Static_assert(sizeof(void *) == 2, "DOS emulated TLS requires near data");
-#endif
 
 struct dos_emutls_control {
   uintptr_t size;

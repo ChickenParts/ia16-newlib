@@ -60,7 +60,7 @@ ELKS_CRT0	= elks-crt0.o
 
 DOS_COMMON_OBJS = dos-emutls.o dos-access.o dos-chdir.o dos-chmod.o dos-closer.o \
 		  dos-cvt-file-time.o dos-dbcs.o dos-dbcs-strcspn.o \
-		  dos-dup.o dos-dup2.o dos-environ.o dos-argv.o \
+		  dos-dup.o dos-dup2.o dos-environ.o dos-argv.o dos-kill.o \
 		  dos-fstatr.o dos-getcwd.o \
 		  dos-getcwd-impl.o dos-gettimeofdayr.o dos-heaplen.o \
 		  dos-isattyr.o dos-lseekr.o dos-mkdir.o dos-mkdirr.o \
@@ -70,7 +70,12 @@ DOS_COMMON_OBJS = dos-emutls.o dos-access.o dos-chdir.o dos-chmod.o dos-closer.o
 		  dos-uname-impl.o dos-unlinkr.o dos-usleep.o dos-writer.o
 PROTECTED_MODE_P = $(filter -mprotected-mode -mdpmi% -mdosx -melks%, \
 			    $(CC) $(CFLAGS) $(MULTILIB))
-CMODEL_MEDIUM_P = $(filter -mcmodel=medium,$(CC) $(CFLAGS) $(MULTILIB))
+IA16_MODEL_FLAGS = $(CC) $(CFLAGS) $(MULTILIB)
+CMODEL_TINY_P = $(filter -mcmodel=tiny -mmemory-model=tiny,$(IA16_MODEL_FLAGS))
+CMODEL_SMALL_P = $(filter -mcmodel=small -mmemory-model=small,$(IA16_MODEL_FLAGS))
+CMODEL_MEDIUM_P = $(filter -mcmodel=medium -mmemory-model=medium,$(IA16_MODEL_FLAGS))
+CMODEL_COMPACT_P = $(filter -mcmodel=compact -mmemory-model=compact,$(IA16_MODEL_FLAGS))
+CMODEL_LARGE_P = $(filter -mcmodel=large -mmemory-model=large,$(IA16_MODEL_FLAGS))
 CMODEL_NOT_MEDIUM_P = $(if $(CMODEL_MEDIUM_P),,!)
 DOS_COMMON_OBJS += $(if $(PROTECTED_MODE_P), \
 			dx-abort.o dx-tb.o dx-dbcs-weaks.o dx-dpmi16.o, \
@@ -100,11 +105,25 @@ DOS_SMALL_CRT0	= dos-s-c0.o
 
 DOS_MEDIUM_OBJS	= $(DOS_COMMON_OBJS)
 DOS_MEDIUM_OBJS	+= dos-msmmabort.o dos-mxv1.o
-DOS_MEDIUM_CFLAGS = -mcmodel=medium $(DOS_TINY_CFLAGS)
-DOS_MEDIUM_ASFLAGS = -mcmodel=medium $(DOS_TINY_ASFLAGS)
+DOS_MEDIUM_CFLAGS = $(if $(filter -mmemory-model=medium -mcmodel=medium,$(IA16_MODEL_FLAGS)),,-mcmodel=medium) $(DOS_TINY_CFLAGS)
+DOS_MEDIUM_ASFLAGS = $(if $(filter -mmemory-model=medium -mcmodel=medium,$(IA16_MODEL_FLAGS)),,-mcmodel=medium) $(DOS_TINY_ASFLAGS)
 DOS_MEDIUM_SCRIPTS = dos-mm.ld dos-mms.ld dos-mml.ld dos-mmsl.ld
 DOS_MEDIUM_BSP	= libdos-m.a
 DOS_MEDIUM_CRT0	= dos-m-c0.o
+
+DOS_COMPACT_OBJS = $(DOS_COMMON_OBJS) dos-msmmabort.o dos-mxv1.o
+DOS_COMPACT_CFLAGS = $(if $(filter -mmemory-model=compact -mcmodel=compact,$(IA16_MODEL_FLAGS)),,-mcmodel=compact) $(DOS_TINY_CFLAGS)
+DOS_COMPACT_ASFLAGS = $(if $(filter -mmemory-model=compact -mcmodel=compact,$(IA16_MODEL_FLAGS)),,-mcmodel=compact) $(DOS_TINY_ASFLAGS)
+DOS_COMPACT_SCRIPTS = dos-mc.ld dos-mcs.ld dos-mcl.ld dos-mcsl.ld
+DOS_COMPACT_BSP = libdos-c.a
+DOS_COMPACT_CRT0 = dos-c-c0.o
+
+DOS_LARGE_OBJS = $(DOS_COMMON_OBJS) dos-msmmabort.o dos-mxv1.o
+DOS_LARGE_CFLAGS = $(if $(filter -mmemory-model=large -mcmodel=large,$(IA16_MODEL_FLAGS)),,-mcmodel=large) $(DOS_TINY_CFLAGS)
+DOS_LARGE_ASFLAGS = $(if $(filter -mmemory-model=large -mcmodel=large,$(IA16_MODEL_FLAGS)),,-mcmodel=large) $(DOS_TINY_ASFLAGS)
+DOS_LARGE_SCRIPTS = dos-ml.ld dos-mls.ld dos-mll.ld dos-mlsl.ld
+DOS_LARGE_BSP = libdos-l.a
+DOS_LARGE_CRT0 = dos-l-c0.o
 
 DOSX_SMALL_SCRIPTS = dx-ms.ld dx-s-c0.a dx-s-lc.a
 DOSX_SMALL_CRT0 = dx-s-c0.o
@@ -175,29 +194,46 @@ HELPER_SCRIPTS	+= libdosv1.a libck086.a libck186.a libdx32.a
 HELPER_SCRIPTS_NONMULTI = rt-specs/r-msdos.spec
 
 ALL_BSP		= $(ELKS_BSP) $(DOS_TINY_BSP) $(DOS_SMALL_BSP) \
-		  $(DOS_MEDIUM_BSP) \
+		  $(DOS_MEDIUM_BSP) $(DOS_COMPACT_BSP) $(DOS_LARGE_BSP) \
 		  $(NANO_STDIO_BSP) $(AUTOFLOAT_NANO_STDIO_BSP) \
 		  $(IPRINTF_BSP) $(GPRINTF_BSP) $(TPRINTF_BSP) \
 		  $(ISCANF_BSP) $(GSCANF_BSP) $(TSCANF_BSP)
 
-OBJS		= $(if $(CMODEL_MEDIUM_P), \
-		       $(DOS_MEDIUM_OBJS), \
-		       $(sort $(DOS_TINY_OBJS) $(DOS_SMALL_OBJS)))
-CFLAGS_FOR_TARGET += $(if $(CMODEL_MEDIUM_P), \
-			  $(DOS_MEDIUM_CFLAGS), $(DOS_SMALL_CFLAGS))
-ASFLAGS		= $(if $(CMODEL_MEDIUM_P), \
-		       $(DOS_MEDIUM_ASFLAGS), $(DOS_SMALL_ASFLAGS))
-SCRIPTS		= $(if $(CMODEL_MEDIUM_P), \
-		       $(DOS_MEDIUM_SCRIPTS), \
-		       $(sort $(DOS_TINY_SCRIPTS) $(DOS_SMALL_SCRIPTS))) \
+IA16_DOS_MODEL = $(if $(CMODEL_TINY_P),tiny, \
+		$(if $(CMODEL_MEDIUM_P),medium, \
+		$(if $(CMODEL_COMPACT_P),compact, \
+		$(if $(CMODEL_LARGE_P),large,small))))
+OBJS		= $(if $(filter tiny,$(IA16_DOS_MODEL)), $(DOS_TINY_OBJS), \
+		$(if $(filter medium,$(IA16_DOS_MODEL)), $(DOS_MEDIUM_OBJS), \
+		$(if $(filter compact,$(IA16_DOS_MODEL)), $(DOS_COMPACT_OBJS), \
+		$(if $(filter large,$(IA16_DOS_MODEL)), $(DOS_LARGE_OBJS), \
+		$(DOS_SMALL_OBJS)))))
+CFLAGS_FOR_TARGET += $(if $(filter tiny,$(IA16_DOS_MODEL)), $(DOS_TINY_CFLAGS), \
+			$(if $(filter medium,$(IA16_DOS_MODEL)), $(DOS_MEDIUM_CFLAGS), \
+			$(if $(filter compact,$(IA16_DOS_MODEL)), $(DOS_COMPACT_CFLAGS), \
+			$(if $(filter large,$(IA16_DOS_MODEL)), $(DOS_LARGE_CFLAGS), \
+			$(DOS_SMALL_CFLAGS)))))
+ASFLAGS		= $(if $(filter tiny,$(IA16_DOS_MODEL)), $(DOS_TINY_ASFLAGS), \
+		$(if $(filter medium,$(IA16_DOS_MODEL)), $(DOS_MEDIUM_ASFLAGS), \
+		$(if $(filter compact,$(IA16_DOS_MODEL)), $(DOS_COMPACT_ASFLAGS), \
+		$(if $(filter large,$(IA16_DOS_MODEL)), $(DOS_LARGE_ASFLAGS), \
+		$(DOS_SMALL_ASFLAGS)))))
+SCRIPTS		= $(if $(filter tiny,$(IA16_DOS_MODEL)), $(DOS_TINY_SCRIPTS), \
+		$(if $(filter medium,$(IA16_DOS_MODEL)), $(DOS_MEDIUM_SCRIPTS), \
+		$(if $(filter compact,$(IA16_DOS_MODEL)), $(DOS_COMPACT_SCRIPTS), \
+		$(if $(filter large,$(IA16_DOS_MODEL)), $(DOS_LARGE_SCRIPTS), \
+		$(DOS_SMALL_SCRIPTS)))) \
 		  $(HELPER_SCRIPTS)
-BSP		= $(if $(CMODEL_MEDIUM_P), \
-		       $(DOS_MEDIUM_BSP), \
-		       $(sort $(DOS_TINY_BSP) $(DOS_SMALL_BSP)))
-CRT0		= $(if $(CMODEL_MEDIUM_P), \
-		       $(DOS_MEDIUM_CRT0), \
-		       $(sort $(DOS_TINY_CRT0) $(DOS_TSR_TINY_CRT0) \
-			      $(DOS_SMALL_CRT0)))
+BSP		= $(if $(filter tiny,$(IA16_DOS_MODEL)), $(DOS_TINY_BSP), \
+		$(if $(filter medium,$(IA16_DOS_MODEL)), $(DOS_MEDIUM_BSP), \
+		$(if $(filter compact,$(IA16_DOS_MODEL)), $(DOS_COMPACT_BSP), \
+		$(if $(filter large,$(IA16_DOS_MODEL)), $(DOS_LARGE_BSP), \
+		$(DOS_SMALL_BSP)))))
+CRT0		= $(if $(filter tiny,$(IA16_DOS_MODEL)), $(DOS_TINY_CRT0) $(DOS_TSR_TINY_CRT0), \
+		$(if $(filter medium,$(IA16_DOS_MODEL)), $(DOS_MEDIUM_CRT0), \
+		$(if $(filter compact,$(IA16_DOS_MODEL)), $(DOS_COMPACT_CRT0), \
+		$(if $(filter large,$(IA16_DOS_MODEL)), $(DOS_LARGE_CRT0), \
+		$(DOS_SMALL_CRT0)))))
 
 # Host specific makefile fragment comes in here.
 @host_makefile_frag@
@@ -263,6 +299,14 @@ $(objroot)/newlib/$(DOS_MEDIUM_BSP):
 	ln -s ../libgloss/ia16/$(DOS_MEDIUM_BSP) $(objroot)/newlib
 $(objroot)/newlib/$(DOS_MEDIUM_CRT0):
 	ln -s ../libgloss/ia16/$(DOS_MEDIUM_CRT0) $(objroot)/newlib
+$(objroot)/newlib/$(DOS_COMPACT_BSP):
+	ln -s ../libgloss/ia16/$(DOS_COMPACT_BSP) $(objroot)/newlib
+$(objroot)/newlib/$(DOS_COMPACT_CRT0):
+	ln -s ../libgloss/ia16/$(DOS_COMPACT_CRT0) $(objroot)/newlib
+$(objroot)/newlib/$(DOS_LARGE_BSP):
+	ln -s ../libgloss/ia16/$(DOS_LARGE_BSP) $(objroot)/newlib
+$(objroot)/newlib/$(DOS_LARGE_CRT0):
+	ln -s ../libgloss/ia16/$(DOS_LARGE_CRT0) $(objroot)/newlib
 $(objroot)/newlib/$(DOS_TSR_TINY_CRT0):
 	ln -s ../libgloss/ia16/$(DOS_TSR_TINY_CRT0) $(objroot)/newlib
 $(objroot)/newlib/$(DOSX_SMALL_CRT0):
@@ -347,6 +391,14 @@ $(DOS_MEDIUM_CRT0) : dos-models-crt0.S
 	$(CC) $(CFLAGS_FOR_TARGET) -UTINY -USMALL -DMEDIUM -UTSR -UDOSX \
 	  $(ASFLAGS_FOR_TARGET) $(ASFLAGS) -c $(CFLAGS) $< -o $@
 
+$(DOS_COMPACT_CRT0) : dos-models-crt0.S
+	$(CC) $(CFLAGS_FOR_TARGET) -UTINY -USMALL -UMEDIUM -DCOMPACT -ULARGE -UTSR -UDOSX \
+	  $(ASFLAGS_FOR_TARGET) $(ASFLAGS) -c $(CFLAGS) $< -o $@
+
+$(DOS_LARGE_CRT0) : dos-models-crt0.S
+	$(CC) $(CFLAGS_FOR_TARGET) -UTINY -USMALL -UMEDIUM -UCOMPACT -DLARGE -UTSR -UDOSX \
+	  $(ASFLAGS_FOR_TARGET) $(ASFLAGS) -c $(CFLAGS) $< -o $@
+
 $(DOS_TSR_TINY_CRT0) : dos-models-crt0.S
 	$(CC) $(CFLAGS_FOR_TARGET) -DTINY -USMALL -UMEDIUM -DTSR -UDOSX \
 	  $(ASFLAGS_FOR_TARGET) $(ASFLAGS) -c $(CFLAGS) $< -o $@
@@ -396,6 +448,12 @@ $(DOS_SMALL_BSP) : $(DOS_SMALL_OBJS)
 	$(AR) rcs $@ $+
 
 $(DOS_MEDIUM_BSP) : $(DOS_MEDIUM_OBJS)
+	$(AR) rcs $@ $+
+
+$(DOS_COMPACT_BSP) : $(DOS_COMPACT_OBJS)
+	$(AR) rcs $@ $+
+
+$(DOS_LARGE_BSP) : $(DOS_LARGE_OBJS)
 	$(AR) rcs $@ $+
 
 # When building the nano I/O "BSP", we need to also extract the modules from
@@ -601,6 +659,30 @@ dos-mml.ld: dos-mx.ld.in autofloat.ld.in
 
 dos-mmsl.ld: dos-mx.ld.in autofloat.ld.in
 	$(GEN_LD_SCRIPT) -mcmodel=medium >$@
+
+dos-mc.ld: dos-mx.ld.in autofloat.ld.in
+	$(GEN_LD_SCRIPT) -mcmodel=compact -nostdlib >$@
+
+dos-mcs.ld: dos-mx.ld.in autofloat.ld.in
+	$(GEN_LD_SCRIPT) -mcmodel=compact -nodefaultlibs >$@
+
+dos-mcl.ld: dos-mx.ld.in autofloat.ld.in
+	$(GEN_LD_SCRIPT) -mcmodel=compact -nostartfiles >$@
+
+dos-mcsl.ld: dos-mx.ld.in autofloat.ld.in
+	$(GEN_LD_SCRIPT) -mcmodel=compact >$@
+
+dos-ml.ld: dos-mx.ld.in autofloat.ld.in
+	$(GEN_LD_SCRIPT) -mcmodel=large -nostdlib >$@
+
+dos-mls.ld: dos-mx.ld.in autofloat.ld.in
+	$(GEN_LD_SCRIPT) -mcmodel=large -nodefaultlibs >$@
+
+dos-mll.ld: dos-mx.ld.in autofloat.ld.in
+	$(GEN_LD_SCRIPT) -mcmodel=large -nostartfiles >$@
+
+dos-mlsl.ld: dos-mx.ld.in autofloat.ld.in
+	$(GEN_LD_SCRIPT) -mcmodel=large >$@
 
 dtr-mt.ld: dtr-mt.ld.in autofloat.ld.in
 	$(GEN_LD_SCRIPT) -nostdlib >$@

@@ -27,6 +27,9 @@
 #define FP_SEG(x) \
   __builtin_ia16_selector ((unsigned)((unsigned long)(void __far *)(x) >> 16))
 #endif
+#ifndef FP_OFF
+#define FP_OFF(x) ((unsigned) (unsigned long) (void __far *) (x))
+#endif
 
 extern time_t __msdos_cvt_file_time (unsigned, unsigned);
 
@@ -68,7 +71,7 @@ static int dos_findfirst (struct _reent *reent, const char *path,
   asm volatile ("int $0x21; sbb %0, %0" :
 		"=r"(carry), "=a"(ret) :
 	        "Rah"((char)0x4e), "c"(ALL_FILES),
-		"d"(path), "Rds"(FP_SEG(path)) : "cc", "memory");
+	        "d"(FP_OFF(path)), "Rds"(FP_SEG(path)) : "cc", "memory");
   if (carry)
     {
       reent->_errno = ret;

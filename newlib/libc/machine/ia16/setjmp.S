@@ -34,7 +34,7 @@ setjmp:
 	pushw	%bp		# 0(%bp)
 	movw	%sp,	%bp
 #ifndef __IA16_CALLCVT_REGPARMCALL
-# ifndef __IA16_CMODEL_IS_FAR_TEXT
+# if !defined(__IA16_CMODEL_IS_FAR_TEXT) && !defined(__FAR_CODE__)
 	movw	6(%bp),	%bx	# %bx points to jumpbuf.
 # else
 	movw	8(%bp),	%bx
@@ -51,7 +51,7 @@ setjmp:
 	movw	%di,	10(%bx)	# Save %di.
 	movw	0(%bp),	%ax
 	movw	%ax,	12(%bx)	# Save %bp.
-#ifndef __IA16_CMODEL_IS_FAR_TEXT
+#if !defined(__IA16_CMODEL_IS_FAR_TEXT) && !defined(__FAR_CODE__)
 	leaw	6(%bp),	%ax
 #else
 	leaw	8(%bp),	%ax
@@ -60,7 +60,7 @@ setjmp:
 	movw	4(%bp),	%ax
 	movw	%es,	16(%bx)	# Save %es.
 	movw	%ax,	18(%bx)	# Save %ip.
-#ifdef __IA16_CMODEL_IS_FAR_TEXT
+#if defined(__IA16_CMODEL_IS_FAR_TEXT) || defined(__FAR_CODE__)
 	movw	6(%bp),	%ax
 	movw	%ax,	20(%bx)	# Save %cs.
 #endif
@@ -80,7 +80,7 @@ longjmp:
 #endif
 	movw	%sp,	%bp
 #ifndef __IA16_CALLCVT_REGPARMCALL
-# ifndef __IA16_CMODEL_IS_FAR_TEXT
+# if !defined(__IA16_CMODEL_IS_FAR_TEXT) && !defined(__FAR_CODE__)
 	movw	4(%bp),	%ax	# Get retval.
 	movw	2(%bp),	%bp	# Get jmpbuf.
 # else
@@ -94,7 +94,7 @@ longjmp:
 	movw	%ax,	0(%bp)	# Store retval in jmpbuf[0].
 
 	lesw	14(%bp),%sp	# Restore %sp and %es.
-#ifdef __IA16_CMODEL_IS_FAR_TEXT
+#if defined(__IA16_CMODEL_IS_FAR_TEXT) || defined(__FAR_CODE__)
 	pushw	20(%bp)
 #endif
 	pushw	18(%bp)		# Restore %ip.

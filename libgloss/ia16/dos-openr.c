@@ -24,6 +24,9 @@
 #define FP_SEG(x) \
   __builtin_ia16_selector ((unsigned)((unsigned long)(void __far *)(x) >> 16))
 #endif
+#ifndef FP_OFF
+#define FP_OFF(x) ((unsigned) (unsigned long) (void __far *) (x))
+#endif
 
 /* the following flag combinations are used by fopen():
    'r': O_RDONLY
@@ -40,7 +43,7 @@ static int dos_exists (const char *pathname)
   int carry;
   asm volatile ("int $0x21; sbb %0, %0" :
 		"=a"(carry) :
-	        "a"(0x4300), "d"(pathname), "Rds"(FP_SEG(pathname)) :
+	        "a"(0x4300), "d"(FP_OFF(pathname)), "Rds"(FP_SEG(pathname)) :
 		"cx", "cc");
   return carry + 1;
 }
@@ -51,7 +54,7 @@ static int dos_open (struct _reent *reent, const char *pathname,
   int ret, carry;
   asm volatile ("int $0x21; sbb %0, %0" :
 		"=r"(carry), "=a"(ret) :
-	        "Rah"((char)0x3d), "Ral"(flags), "d"(pathname),
+	        "Rah"((char)0x3d), "Ral"(flags), "d"(FP_OFF(pathname)),
 		"Rds"(FP_SEG(pathname)) : "cc");
   if (carry)
     {
@@ -67,7 +70,7 @@ static int dos_creat (struct _reent *reent, const char *pathname,
   int ret, carry;
   asm volatile ("int $0x21; sbb %0, %0" :
 		"=r"(carry), "=a"(ret) :
-	        "Rah"((char)0x3c), "Rcl"(attr), "d"(pathname),
+	        "Rah"((char)0x3c), "Rcl"(attr), "d"(FP_OFF(pathname)),
 		"Rds"(FP_SEG(pathname)) : "cc");
   if (carry)
     {

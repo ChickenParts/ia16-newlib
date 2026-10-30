@@ -110,7 +110,7 @@
 # define SEG_RELOC_(place, sym) .reloc (place), R_386_OZSEG16, sym
 #endif
 #define AUX___(aux)		#aux
-#ifndef __IA16_CMODEL_IS_FAR_TEXT
+#if !defined(__IA16_CMODEL_IS_FAR_TEXT) && !defined(__FAR_CODE__)
 # define FAR_ADJ__		0
 # define RET__			ret
 # define JMP_(func)		jmp func
@@ -120,10 +120,18 @@
 #else
 # define FAR_ADJ__		2
 # define RET__			lret
+# if defined(__clang__) && defined(__ELF__)
+/* Clang's integrated assembler emits the GNU SEGELF companion relocation for
+   a far call/jump itself. Adding SEG_RELOC_ here duplicates the MZ loader
+   relocation and increments the loaded code segment twice. */
+#  define JMP_(func)		ljmp $0, $func
+#  define CALL_(func)		lcall $0, $func
+# else
 # define JMP_(func)		SEG_RELOC_ (.+3, func); \
 				ljmp $0, $func
 # define CALL_(func)		SEG_RELOC_ (.+3, func); \
 				lcall $0, $func
+# endif
 # define TEXT_(tag)		.section AUX___(.fartext.f.##tag##$), "ax"
 # define TEXT_PTR_(func)	SEG_RELOC_ (.+2, func); \
 				.short func, 0

@@ -20,6 +20,9 @@
 #define FP_SEG(x) \
   __builtin_ia16_selector ((unsigned)((unsigned long)(void __far *)(x) >> 16))
 #endif
+#ifndef FP_OFF
+#define FP_OFF(x) ((unsigned) (unsigned long) (void __far *) (x))
+#endif
 
 #define _A_RDONLY 1
 #define _A_SUBDIR 0x10
@@ -31,7 +34,7 @@ dos_getfileattr (const char *path, unsigned *attrs)
 
   __asm volatile ("int $0x21; sbbw %2, %2"
 		  : "=a" (err), "=c" (cx), "=d" (carry)
-		  : "0" (0x4300U), "Rds" (FP_SEG (path)), "2" (path)
+		  : "0" (0x4300U), "Rds" (FP_SEG (path)), "2" (FP_OFF (path))
 		  : "bx", "cc", "memory");
 
   if (carry)

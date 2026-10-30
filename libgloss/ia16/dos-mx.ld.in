@@ -6,13 +6,17 @@ cmd2='#'
 w1=with
 w2=with
 w3=without
+libgcc=-lgcc
+crtbegin='-l:crtbegin.o -l:crtend.o'
 crt0='-l:dos-@cmodel@-c0.o'
 cm=s
 cml=small
 while [ $# -gt 0 ]; do
   case "$1" in
     -mclang-runtime)
-       clang_runtime=yes;;
+       clang_runtime=yes
+       libgcc=
+       crtbegin=;;
     -nostdlib)
       cmd1='/^@if_starts@/,/^@endif@/ d'
       cmd2='/^@if_libs@/,/^@endif@/ d'
@@ -30,17 +34,24 @@ while [ $# -gt 0 ]; do
     -mcmodel=medium)
        cm=m
        cml=medium;;
+    -mcmodel=compact)
+       cm=c
+       cml=compact;;
+    -mcmodel=large)
+       cm=l
+       cml=large;;
   esac
   shift
 done
 clang_cmd='/^@clang@/d'
-if [ "${clang_runtime:-no}" = yes ] && [ "$w3" = without ] && [ "$cm" = s ]; then
+if [ "${clang_runtime:-no}" = yes ] && [ "$w3" = without ]; then
   clang_cmd='s/^@clang@//'
 fi
 sed -e "$cmd1" -e "$cmd2" -e "s;@crt0@;$crt0;g" \
     -e "s;@withstarts@;$w1;g" -e "s;@withlibs@;$w2;g" \
-    -e "s;@withdpmiable@;$w3;g" \
+    -e "s;@withdpmiable@;$w3;g" -e "s;@libgcc@;$libgcc;g" \
     -e "s;@cmodel@;$cm;g" -e "s;@cmodel_long@;$cml;g" \
+    -e "s;@crtbegin@;$crtbegin;g" \
     -e "s/@self@/`basename "$0"`/g" -e "/^@if/ d" -e "/^@endif@/ d" <<'EPART1'
 /* Linker script for @cmodel_long@-model DOS executables, @withstarts@
    startup files, @withlibs@ default libraries, and @withdpmiable@ DPMI
@@ -51,10 +62,10 @@ sed -e "$cmd1" -e "$cmd2" -e "s;@crt0@;$crt0;g" \
 OUTPUT_FORMAT(binary)
 ENTRY(_start)
 @if_starts@
-INPUT(-l:crtbegin.o -l:crtend.o @crt0@)
+INPUT(@crtbegin@ @crt0@)
 @endif@
 @if_libs@
-GROUP(-lc -lgcc -ldos-@cmodel@ -lm)
+GROUP(-lc @libgcc@ -ldos-@cmodel@ -lm)
 @endif@
 
 MEMORY
@@ -186,7 +197,7 @@ SECTIONS
 		__etext_padded = .;
 
 		ASSERT(. <= 0x10000,
-		    "Error: too large for a small or medium model .exe file.");
+		    "Error: too large for a near-code model .exe file.");
 
 	} >csegvma AT >bseglma
 	__ltext = __etext - __stext;

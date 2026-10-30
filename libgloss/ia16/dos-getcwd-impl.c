@@ -22,6 +22,9 @@
 #define FP_SEG(x) \
   __builtin_ia16_selector ((unsigned)((unsigned long)(void __far *)(x) >> 16))
 #endif
+#ifndef FP_OFF
+#define FP_OFF(x) ((unsigned) (unsigned long) (void __far *) (x))
+#endif
 
 unsigned char
 __msdos_getdrive (void)
@@ -46,7 +49,7 @@ __msdos_getcwd (char buf[PATH_MAX], unsigned char drive)
   asm volatile ("int $0x21; sbbw %1, %1"
 		: "=a" (err), "=r" (carry)
 		: "Rah" ((unsigned char) 0x47), "Rdl" ((unsigned char)drive),
-		  "Rds" (FP_SEG (buf + 3)), "S" (buf + 3)
+		  "Rds" (FP_SEG (buf + 3)), "S" (FP_OFF (buf + 3))
 		: "cc", "memory");
   if (carry)
     {

@@ -1,0 +1,122 @@
+/* Clang DOS MZ layout for near and far code/data pointer models.  Pass this
+   script to lld with --oformat=mz so it emits DOS load relocations for GNU
+   IA-16 SEG16 references. */
+ENTRY(_start)
+
+SECTIONS
+{
+  /* The MZ loader adds the load-module segment to SEG16 fields. Keep the code
+     companions at the load-module origin (CS); the code itself is below. */
+  .ia16_segelf_text_bang 0 (NOLOAD) :
+  {
+    KEEP(*(".text!*" ".text.*!" ".fartext!*" ".fartext.*!"
+           ".startupA!*" ".startupB!*" ".startupC!*" ".startupD!*"
+           ".startupE!*" ".startupF!*" ".msdos_init!*" ".msdos_init.*!"
+           ".msdos_initA!*" ".msdos_initA.*!" ".msdos_initB!*"
+           ".msdos_initB.*!" ".preinit!*" ".preinit.*!" ".init!*"
+           ".exitA!*" ".fini!*" ".exitB!*"))
+  }
+  .text 0 :
+  {
+    __stext = .;
+    KEEP(*(.startupA))
+    KEEP(*(.startupB))
+    KEEP(*(.startupC))
+    KEEP(*(.msdos_init .msdos_init.*))
+    KEEP(*(.msdos_initA .msdos_initA.*))
+    KEEP(*(.startupD))
+    KEEP(*(.msdos_initB .msdos_initB.*))
+    KEEP(*(.startupE))
+    KEEP(*(.preinit .preinit.*))
+    KEEP(*(.init))
+    KEEP(*(.startupF))
+    KEEP(*(.exitA))
+    KEEP(*(.fini))
+    KEEP(*(.exitB))
+    *(.text .text.* .fartext .fartext.* .init .fini)
+    INPUT_SECTION_FLAGS(SHF_ALLOC & SHF_EXECINSTR) *(*)
+    __etext = .;
+  }
+  .ia16_segelf_text_amp SIZEOF(.text) (NOLOAD) :
+  {
+    KEEP(*(".text&*" ".text.*&" ".fartext&*" ".fartext.*&"
+           ".startupA&*" ".startupB&*" ".startupC&*" ".startupD&*"
+           ".startupE&*" ".startupF&*" ".msdos_init&*" ".msdos_init.*&"
+           ".msdos_initA&*" ".msdos_initA.*&" ".msdos_initB&*"
+           ".msdos_initB.*&" ".preinit&*" ".preinit.*&" ".init&*"
+           ".exitA&*" ".fini&*" ".exitB&*"))
+  }
+  ASSERT(SIZEOF(.text) <= 0x10000,
+         "Error: too large for the DOS code segment.")
+
+  .data 0 : AT(ALIGN(LOADADDR(.text) + SIZEOF(.text), 16))
+  {
+    __sdata = .;
+
+    __ia16_ctors_start = .;
+    KEEP(*(SORT(.ctors.*)))
+    KEEP(*(.ctors))
+    __ia16_ctors_end = .;
+    __ia16_dtors_start = .;
+    KEEP(*(SORT(.dtors.*)))
+    KEEP(*(.dtors))
+    __ia16_dtors_end = .;
+    __ia16_preinit_array_start = .;
+    KEEP(*(.preinit_array .preinit_array.*))
+    __ia16_preinit_array_end = .;
+    __ia16_init_array_start = .;
+    KEEP(*(SORT_BY_INIT_PRIORITY(.init_array.*)))
+    KEEP(*(.init_array))
+    __ia16_init_array_end = .;
+    __ia16_fini_array_start = .;
+    KEEP(*(SORT_BY_INIT_PRIORITY(.fini_array.*)))
+    KEEP(*(.fini_array))
+    __ia16_fini_array_end = .;
+
+    *(.msdos_init_rodata .msdos_init_rodata.*)
+    *(.rodata .rodata.* .rodata1 .farrodata .farrodata.*)
+    *(.data .data.* .data1 .sdata .sdata.* .ldata .ldata.*)
+    *(.fardata .fardata.*)
+    *(.gcc_except_table .gcc_except_table.*)
+    *(.autofloat_stdio.*)
+    __edata = .;
+  }
+
+  /* Near and far data pointers use the same DGROUP origin in this DOS
+     profile. Far pointers remain lossless; each resident segment is bounded
+     independently by the linker checks below. */
+  __dgroup = LOADADDR(.data) - ADDR(.data);
+  "__dgroup!" = __dgroup;
+  .ia16_segelf_data_bang __dgroup (NOLOAD) :
+  {
+    KEEP(*(".data!*" ".data.*!" ".rodata!*" ".rodata.*!"
+           ".bss!*" ".bss.*!" ".farrodata!*" ".farrodata.*!"
+           ".fardata!*" ".fardata.*!" ".ctors!*" ".ctors.*!"
+           ".dtors!*" ".dtors.*!" ".preinit_array!*"
+           ".preinit_array.*!" ".init_array!*" ".init_array.*!"
+           ".fini_array!*" ".fini_array.*!" ".gcc_except_table!*"))
+  }
+
+  .bss ALIGN(ADDR(.data) + SIZEOF(.data), 2) (NOLOAD)
+       : AT(__dgroup + ALIGN(ADDR(.data) + SIZEOF(.data), 2))
+  {
+    __sbss = .;
+    *(.bss .bss.* .sbss .sbss.* .lbss .lbss.*)
+    *(COMMON)
+    __ebss = .;
+    __lbss = (__ebss - __sbss + 1) / 2;
+    __heap_end_minimum = ALIGN(__ebss, 8);
+  }
+
+  PROVIDE(__stack_size = 0x1000);
+  .stack ALIGN(ADDR(.bss) + SIZEOF(.bss), 16) (NOLOAD)
+       : AT(__dgroup + ALIGN(ADDR(.bss) + SIZEOF(.bss), 16))
+  {
+    __stack_start = .;
+    . += __stack_size;
+    __stack_end = .;
+  }
+  ASSERT(__stack_end <= 0x10000,
+         "Error: DOS DGROUP plus stack exceeds 64KB.")
+  _end = __stack_end;
+}

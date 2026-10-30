@@ -5,7 +5,7 @@ _BEGIN_STD_C
 /* AX, BX, CX, DX, SI, DI, BP, SP, ES and IP; far text also saves CS.
    Keep this layout synchronized with libc/machine/ia16/setjmp.S. */
 #define _JBTYPE unsigned short
-#ifdef __IA16_CMODEL_IS_FAR_TEXT
+#if defined(__IA16_CMODEL_IS_FAR_TEXT) || defined(__FAR_CODE__)
 #define _JBLEN 11
 #else
 #define _JBLEN 10

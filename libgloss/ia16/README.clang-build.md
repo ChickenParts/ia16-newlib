@@ -1,72 +1,94 @@
-# Rebuild the IA16 DOS Clang sysroot
+# Build IA-16 DOS Clang sysroots
 
-`tools/build-clang-sysroot.py` builds the near-pointer DOS runtime in fresh
-build/install directories. It supports tiny COM and small MZ consumers. It
-uses the checked-in configure scripts; Autoconf regeneration is not required.
-The input compiler must include the IA16 fixed-register, far-pointer macro,
-DOS predefined macro, segment-to-segment copy lowering, and binary linker
-LMA/segmented MEMORY fixes. Supply the complete IA16
-compiler-rt builtins archive separately; its exact hash is recorded.
+The maintained build path is Ruby plus CMake and Ninja. It creates separate
+compiler-rt builtins archives and DOS sysroots for every IA-16 frontend memory
+model:
+
+| Model | Code pointers | Data pointers | DOS image |
+| --- | --- | --- | --- |
+| tiny | near | near | COM |
+| small | near | near | MZ |
+| medium | far | near | MZ |
+| compact | near | far | MZ |
+| large | far | far | MZ |
+
+Configure and build the LLVM compiler in its own build tree first. Then build
+all five builtins archives into the compiler resource directory. `--clang`
+must name the Clang from that build.
 
 ```sh
-python3 libgloss/ia16/tools/build-clang-sysroot.py \
-  --source-root /path/to/ia16-newlib \
-  --tool-root /path/to/metachicken-build \
-  --build-root /path/to/new-build \
-  --install-prefix /path/to/new-install \
-  --builtins /path/to/libclang_rt.builtins-ia16.a \
+ruby compiler-rt/tools/build-ia16-builtins.rb \
+  --source-root /path/to/llvm \
+  --clang /path/to/llvm-build/bin/clang \
+  --build-root /path/to/ia16-builtins-build \
+  --install-prefix /path/to/llvm-build/lib/clang/24 \
   --jobs 4
 ```
 
-Build and install paths must not exist. Paths must not contain whitespace or
-shell/Make metacharacters because Autoconf embeds them in Make commands. The
-source and compiler trees are inputs and are not changed. Failures retain
-all logs and partial outputs; choose fresh directories for another attempt.
+The small-model archive keeps the historical
+`lib/baremetal/libclang_rt.builtins-ia16.a` path. Tiny, medium, compact, and
+large archives are installed below `lib/baremetal/<model>/`. Each model uses a
+separate CMake build directory and a Ninja `builtins` target.
 
-The library is compiled as GNU17, for 8086 with the small memory model,
-`-Oz`, and emulated TLS. Minimum-size optimization keeps code within the
-near model's 64 KiB code segment; the full preen consumer exceeds that limit
-with the larger runtime profile. Its near-pointer C ABI is also used by tiny callers;
-the two formats select their matching startup object and libdos archive.
-The compiler must define `__MSDOS__` for the selected DOS target; the profile
-does not substitute a user macro for that target contract.
-Consumer functions select GNU23 and an explicit tiny or small model.
-
-The build puts generated `newlib/targ-include` before generic newlib headers
-using explicit compiler `-I` options and matching ordered `-isystem`
-entries. The duplicated system entries are intentional: the top-level Make
-rules append `-isystem` for the same directories, which makes Clang promote
-earlier `-I` entries into the system-header search order. Listing newlib
-explicitly before the resource headers preserves `limits.h` in that case. This matters because libgloss inserts
-its own generic `-I` options before ordinary `-isystem` directories. Header
-autodetection is constrained with `libc_cv_compiler_isystem` to Clang's
-resource directory. `-nostdinc` and removal of ambient compiler include
-variables prevent accidental host-header discovery. The installed generic
-headers are preserved under `include/newlib` for target `include_next`
-wrappers, and the existing header oracle validates both tiers.
-
-`build-profile.json` records source revision/status, compiler/linker/builtins
-hashes, commands, return codes, archive hashes, and the complete header
-trace. Separate logs retain configure, make, install, and header checks.
-A successful build and header check do not substitute for DOS runtime tests.
-
-Compile and link a consumer with the generated shell functions:
+Build the Newlib and libgloss sysroots with the same compiler and resource
+directory:
 
 ```sh
-. /path/to/new-install/profile.sh
-ia16_clang_tiny -c hello.c -o hello.o
-ia16_link_tiny hello.o -o HELLO.COM
-ia16_clang_small -c hello.c -o hello-small.o
-ia16_link_small hello-small.o -o HELLO.EXE
+ruby libgloss/ia16/tools/build-clang-sysroot.rb \
+  --source-root /path/to/ia16-newlib \
+  --tool-root /path/to/llvm-build \
+  --builtins-root /path/to/llvm-build/lib/clang/24 \
+  --build-root /path/to/ia16-dos-build \
+  --install-prefix /path/to/ia16-dos-install \
+  --jobs 4
 ```
 
-The link functions use the actual DOS CRT and newlib plus the supplied
-compiler-rt archive. They retain normal linker section checks. The generated
-scripts omit GCC startup/default libraries so these are never selected from
-the host. The tiny/small profile does not claim DOS extender support, far
-memory allocation, or multithreaded TLS semantics.
+Both scripts retain command logs and a JSON manifest under the build root.
+Configure creates the target-specific Newlib Makefile and headers; Ruby reads
+its source lists, then generates a Ninja graph for the C, assembly, archive,
+and install inputs. The scripts do not execute Make. Use fresh output roots for
+independent toolchain revisions; rerunning Ninja in an existing profile keeps
+incremental object outputs.
 
-Clang startup includes constructor/destructor traversal and runtime timer cleanup.
-The generated scripts select `-mclang-runtime`; direct template users must select
-that option too. See [startup acceptance](tests/initfini/README.md) for callback
-order, direct `_exit()` behavior, and tested exclusions.
+The installed sysroots are under
+`ia16-pc-msdos/<model>`. The generated `profile.sh` provides a compiler and a
+full DOS link command for each model:
+
+```sh
+. /path/to/ia16-dos-install/profile.sh
+ia16_clang_tiny -c hello.c -o hello-tiny.o
+ia16_link_tiny hello-tiny.o -o HELLO.COM
+ia16_clang_medium -c hello.c -o hello-medium.o
+ia16_link_medium hello-medium.o -o HELLO.EXE
+```
+
+The link functions use the model's startup object, linker script, Newlib
+archives, libgloss archive, and matching compiler-rt builtins. Tiny keeps the
+COM layout; the Clang small profile keeps the near/near MZ ABI. Clang MZ links
+use LLD's native `--oformat=mz` writer so far code and data pointers receive
+DOS loader relocation entries. The existing GCC linker scripts remain
+unchanged.
+
+Run the maintained acceptance harness after building the sysroots. It compiles
+one constructor, destructor, and indirect-call fixture per model, links each
+binary with both Clang and direct `ld.lld`, and checks both guest receipts in
+DOSBox Staging's 386 CPU model using SDL's offscreen video driver. The compiler
+still emits the 8086 instruction set:
+
+```sh
+ruby libgloss/ia16/tests/memory-models/run.rb \
+  --profile /path/to/ia16-dos-install/profile.sh \
+  --out /path/to/fresh-acceptance-output
+```
+
+The build uses generated target headers before generic Newlib headers and the
+compiler's resource headers. It strips ambient include-path variables and
+uses `-nostdinc`, so host headers cannot silently enter the target runtime.
+Each model's manifest records source counts, archive/compiler hashes, selected
+pointer widths, and commands. Build completion alone does not establish DOS
+runtime compatibility; use the maintained memory-model acceptance tests and
+the guest runtime suite for each installed profile.
+
+The earlier `build-clang-sysroot.py` path only describes the historical
+small-model setup. Do not use it to build or qualify medium, compact, or large
+profiles.

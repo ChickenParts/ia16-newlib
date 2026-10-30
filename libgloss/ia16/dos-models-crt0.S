@@ -3,12 +3,13 @@
  *   * a "tiny" model MS-DOS .com file with combined text and data segment,
  *   * a "small" model MS-DOS .exe file with one text segment and one separate
  *     data segment, or
- *   * a "medium" model MS-DOS .exe file with multiple text segments and one
- *     data segment.
+ *   * a "medium" model MS-DOS .exe file with far code and near data,
+ *   * a "compact" model MS-DOS .exe file with near code and far data, or
+ *   * a "large" model MS-DOS .exe file with far code and far data.
  */
 
-#if !defined TINY && !defined SMALL && !defined MEDIUM
-# error "no memory model defined -- please use -DTINY, -DSMALL or -DMEDIUM"
+#if !defined TINY && !defined SMALL && !defined MEDIUM && !defined COMPACT && !defined LARGE
+# error "no memory model defined -- please select TINY, SMALL, MEDIUM, COMPACT or LARGE"
 #endif
 
 #if defined TINY && defined DOSX
@@ -34,10 +35,10 @@
 
 #include "call-cvt.h"
 
-/* The Clang DOS profile does not link GCC's crtbegin/crtend.  Limit the
-   replacement to the supported near-code, real-mode cdecl profiles. */
-#if defined(__clang__) && (defined(TINY) || defined(SMALL)) \
-    && !defined(DOSX) && !defined(TSR) && !defined(__FAR_CODE__) \
+/* The Clang DOS profile does not link GCC's crtbegin/crtend.  The callback
+   walker below handles both near and far code pointers for real-mode cdecl. */
+#if defined(__clang__) && (defined(TINY) || defined(SMALL) || defined(MEDIUM) \
+    || defined(COMPACT) || defined(LARGE)) && !defined(DOSX) && !defined(TSR) \
     && !defined(__IA16_CALLCVT_REGPARMCALL) && !defined(__IA16_CALLCVT_STDCALL)
 # define IA16_CLANG_INITFINI 1
 #endif
@@ -449,7 +450,7 @@ _exit:
 
 #ifndef __IA16_CALLCVT_REGPARMCALL
 	popw	%bx
-# ifdef MEDIUM
+# if defined(MEDIUM) || defined(LARGE) || defined(__IA16_CMODEL_IS_FAR_TEXT) || defined(__FAR_CODE__)
 	popw	%bx
 # endif
 	popw	%ax
@@ -479,10 +480,21 @@ __msdos_crt_exit:
 	pushw	%si
 	pushw	%di
 	pushw	%bp
-	movw	$.Lclang_fini, %ax
+#if defined(__IA16_CMODEL_IS_FAR_TEXT) || defined(__FAR_CODE__)
+	/* atexit stores a far function pointer in medium/large models. */
+	SEG_RELOC_ (.+1, __ia16_clang_fini)
+	movw	$0, %ax
+	pushw	%ax
+	movw	$__ia16_clang_fini, %ax
+	pushw	%ax
+	CALL_ (atexit)
+	addw	$4, %sp
+#else
+	movw	$__ia16_clang_fini, %ax
 	pushw	%ax
 	callw	atexit
 	addw	$2, %sp
+#endif
 	testw	%ax, %ax
 	jnz	.Lclang_init_failed
 	movw	$__ia16_preinit_array_start, %si
@@ -502,9 +514,10 @@ __msdos_crt_exit:
 .Lclang_init_failed:
 	movw	$127, %ax
 	pushw	%ax
-	callw	_exit
+	CALL_ (_exit)
 
-.Lclang_fini:
+	.global __ia16_clang_fini
+__ia16_clang_fini:
 	pushw	%bx
 	pushw	%si
 	pushw	%di
@@ -519,11 +532,35 @@ __msdos_crt_exit:
 	popw	%di
 	popw	%si
 	popw	%bx
+#if defined(__IA16_CMODEL_IS_FAR_TEXT) || defined(__FAR_CODE__)
+	lret
+#else
 	retw
+#endif
 
 /* Legacy lists may contain GCC-style zero and -1 sentinels.  User callbacks
    obey the cdecl callee-save contract, including SI and DI used by the walk. */
 .Lclang_walk_forward:
+#if defined(__IA16_CMODEL_IS_FAR_TEXT) || defined(__FAR_CODE__)
+	cmpw	%di, %si
+	je	.Lclang_walk_done
+	movw	(%si), %ax
+	movw	2(%si), %dx
+	testw	%ax, %ax
+	jne	.Lclang_walk_forward_far_nonzero
+	testw	%dx, %dx
+	je	.Lclang_walk_forward_far_skip
+.Lclang_walk_forward_far_nonzero:
+	cmpw	$-1, %ax
+	jne	.Lclang_walk_forward_far_call
+	cmpw	$-1, %dx
+	je	.Lclang_walk_forward_far_skip
+.Lclang_walk_forward_far_call:
+	lcall	*(%si)
+.Lclang_walk_forward_far_skip:
+	addw	$4, %si
+	jmp	.Lclang_walk_forward
+#else
 	cmpw	%di, %si
 	je	.Lclang_walk_done
 	movw	(%si), %ax
@@ -534,7 +571,27 @@ __msdos_crt_exit:
 	je	.Lclang_walk_forward
 	callw	*%ax
 	jmp	.Lclang_walk_forward
+#endif
 .Lclang_walk_reverse:
+#if defined(__IA16_CMODEL_IS_FAR_TEXT) || defined(__FAR_CODE__)
+	cmpw	%di, %si
+	je	.Lclang_walk_done
+	subw	$4, %si
+	movw	(%si), %ax
+	movw	2(%si), %dx
+	testw	%ax, %ax
+	jne	.Lclang_walk_reverse_far_nonzero
+	testw	%dx, %dx
+	je	.Lclang_walk_reverse
+.Lclang_walk_reverse_far_nonzero:
+	cmpw	$-1, %ax
+	jne	.Lclang_walk_reverse_far_call
+	cmpw	$-1, %dx
+	je	.Lclang_walk_reverse
+.Lclang_walk_reverse_far_call:
+	lcall	*(%si)
+	jmp	.Lclang_walk_reverse
+#else
 	cmpw	%di, %si
 	je	.Lclang_walk_done
 	subw	$2, %si
@@ -545,6 +602,7 @@ __msdos_crt_exit:
 	je	.Lclang_walk_reverse
 	callw	*%ax
 	jmp	.Lclang_walk_reverse
+#endif
 .Lclang_walk_done:
 	retw
 #endif
