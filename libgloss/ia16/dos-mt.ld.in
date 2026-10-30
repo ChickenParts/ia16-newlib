@@ -62,21 +62,22 @@ SECTIONS
     /* Target text sections.  */
     .text : {
 		__stext = .;
-		*(.startupA)
-		*(.head) *(.head.*)
-		*(.startupB)
-		*(.startupC)
-		*(.msdos_init) *(.msdos_init.*)
-		*(.msdos_initA) *(.msdos_initA.*)
-		*(.startupD)
-		*(.msdos_initB) *(.msdos_initB.*)
-		*(.startupE)
-		*(.preinit) *(.preinit.*)
-		*(.init)
-		*(.startupF)
-		*(.exitA)
-		*(.fini)
-		*(.exitB)
+		/* CRT fragments fall through across section boundaries.  */
+		KEEP (*(.startupA))
+		KEEP (*(.head)) KEEP (*(.head.*))
+		KEEP (*(.startupB))
+		KEEP (*(.startupC))
+		KEEP (*(.msdos_init)) KEEP (*(.msdos_init.*))
+		KEEP (*(.msdos_initA)) KEEP (*(.msdos_initA.*))
+		KEEP (*(.startupD))
+		KEEP (*(.msdos_initB)) KEEP (*(.msdos_initB.*))
+		KEEP (*(.startupE))
+		KEEP (*(.preinit)) KEEP (*(.preinit.*))
+		KEEP (*(.init))
+		KEEP (*(.startupF))
+		KEEP (*(.exitA))
+		KEEP (*(.fini))
+		KEEP (*(.exitB))
 		*(.text) *(.text.*)
 		__etext = .;
 	}

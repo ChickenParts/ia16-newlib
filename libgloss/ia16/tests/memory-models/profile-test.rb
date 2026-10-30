@@ -5,6 +5,17 @@ require 'pathname'
 require_relative '../../tools/build-clang-sysroot'
 
 class IA16DriverProfilesTest < Minitest::Test
+  def test_tiny_script_keeps_crt_fallthrough_sections_during_gc
+    template = Pathname(__dir__) / '../../dos-mt.ld.in'
+    script, error, status = Open3.capture3('sh', template.to_s, '-nostdlib', '-mclang-runtime')
+    assert status.success?, error
+    %w[startupA startupB startupC startupD startupE startupF head msdos_init msdos_initA
+       msdos_initB preinit init exitA fini exitB].each do |section|
+      assert_match(/KEEP\s*\(\*\(\.#{section}(?:\s|\))/, script,
+                   "#{section} must survive GC: CRT falls through between sections")
+    end
+  end
+
   def test_profiles_use_driver_runtime_selection_and_query_for_direct_links
     Dir.mktmpdir('ia16-profiles-') do |directory|
       root = Pathname(directory)
