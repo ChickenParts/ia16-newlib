@@ -21,6 +21,9 @@ after failures with a large free top chunk, verify a stable break after failed
 shrink, and allocate/write/free a 65484-byte object. Near cases retain the
 ordinary small allocation/realloc contract.
 
+With 90000 bytes live, far cases also capture `malloc_stats` through ordinary
+stdio and check all three byte totals against `mallinfo` without truncation.
+
 The far heap reserves DOS blocks before serving growth and sorts their
 selectors without changing DOS's allocation strategy. The first paragraph of
 each block contains its pool link and extent. A full 64KB block leaves its last

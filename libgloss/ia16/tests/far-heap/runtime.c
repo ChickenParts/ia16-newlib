@@ -3,6 +3,8 @@
 #include <stdint.h>
 #include <reent.h>
 #include <stdlib.h>
+#include <stdio.h>
+#include <string.h>
 #include <unistd.h>
 
 static int check_bytes(const unsigned char *p, size_t n, unsigned char value) {
@@ -20,6 +22,25 @@ static int fail(unsigned code) {
   (void)write(1, text, sizeof(text) - 1);
   return code;
 }
+#ifdef __FAR_DATA__
+static int check_statistics(void) {
+  FILE *fp = freopen("HEAPSTAT.TXT", "w+", stderr);
+  if (!fp || setvbuf(fp, 0, _IONBF, 0)) return 0;
+  struct mallinfo before = mallinfo();
+  malloc_stats();
+  if (fflush(fp) || fseek(fp, 0, SEEK_SET)) return 0;
+  char text[256];
+  size_t count = fread(text, 1, sizeof(text) - 1, fp);
+  if (!count || fclose(fp)) return 0;
+  text[count] = 0;
+  const char *system = strstr(text, "\nsystem bytes");
+  const char *in_use = strstr(text, "\nin use bytes");
+  if (!system || !in_use) return 0;
+  return strtoul(strchr(text, '=') + 1, 0, 10) == before.arena &&
+    strtoul(strchr(system, '=') + 1, 0, 10) == before.arena &&
+    strtoul(strchr(in_use, '=') + 1, 0, 10) == before.uordblks;
+}
+#endif
 int main(void) {
 #ifdef __FAR_DATA__
   unsigned strategy_before, strategy_after;
@@ -38,6 +59,7 @@ int main(void) {
     if (!check_bytes(p[i], 30000UL, 31 + i)) return fail(15);
   struct mallinfo info = mallinfo();
   if (info.arena < 90000UL || info.arena > 0x100000UL) return fail(32);
+  if (!check_statistics()) return fail(33);
   unsigned char *grown = realloc(p[0], 50000UL);
   if (!grown || !check_bytes(grown, 30000UL, 31)) return fail(16);
   p[0] = grown;

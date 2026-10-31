@@ -3560,7 +3560,11 @@ void malloc_stats(RONEARG) RDECL
 #endif
 {
   unsigned long local_max_total_mem;
+#if IA16_DOS_FAR_HEAP
+  unsigned long local_sbrked_mem;
+#else
   int local_sbrked_mem;
+#endif
   struct mallinfo local_mallinfo;
 #if HAVE_MMAP
   unsigned long local_mmapped_mem, local_max_n_mmaps;
@@ -3586,6 +3590,13 @@ void malloc_stats(RONEARG) RDECL
   fp = stderr;
 #endif
 
+#if IA16_DOS_FAR_HEAP
+  /* Far heaps span several segments while unsigned int remains 16 bits. */
+  fprintf(fp, "max system bytes = %10lu\n", local_max_total_mem);
+  fprintf(fp, "system bytes     = %10lu\n", local_sbrked_mem);
+  fprintf(fp, "in use bytes     = %10lu\n",
+          (unsigned long)local_mallinfo.uordblks);
+#else
   fprintf(fp, "max system bytes = %10u\n", 
 	  (unsigned int)(local_max_total_mem));
 #if HAVE_MMAP
@@ -3603,6 +3614,7 @@ void malloc_stats(RONEARG) RDECL
   fprintf(fp, "max mmap regions = %10u\n", 
 	  (unsigned int)local_max_n_mmaps);
 #endif
+#endif /* IA16_DOS_FAR_HEAP */
 }
 
 #endif /* DEFINE_MALLOC_STATS */
