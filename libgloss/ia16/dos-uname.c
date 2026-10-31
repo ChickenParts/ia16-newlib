@@ -35,8 +35,49 @@
 #endif
 
 extern unsigned __ia16_get_hw_cpu (void);
+#ifdef __clang__
+/* Clang does not implement GCC's regparmcall attribute.  Use the ordinary
+   model-specific C ABI for both the destination pointer and size_t, and keep
+   the DOS extension's 16:16 source pointer explicit. */
+int
+__msdos_get_kern_ver_str (char *buffer, size_t size)
+{
+  unsigned offset, segment = 0;
+  int carry;
+  if (size < 2)
+    return -1;
+  __asm volatile ("int $0x21; sbbw %0, %0"
+                  : "=r" (carry), "=a" (offset), "+d" (segment)
+                  : "1" (0x33ffu) : "cc", "memory");
+  if (carry)
+    return -1;
+  if (!segment)
+    {
+      /* Unsupported kernels may leave DX unchanged.  A second request with
+         a different input distinguishes that from a real segment-zero result. */
+      segment = 0x33ffu;
+      __asm volatile ("int $0x21; sbbw %0, %0"
+                      : "=r" (carry), "=a" (offset), "+d" (segment)
+                      : "1" (0x33ffu) : "cc", "memory");
+      if (carry || segment)
+        return -1;
+    }
+  const char __far *source =
+    (const char __far *) (((unsigned long) segment << 16) | offset);
+  while (--size)
+    {
+      char value = *source++;
+      if (!value)
+        break;
+      *buffer++ = value;
+    }
+  *buffer = 0;
+  return 0;
+}
+#else
 extern __attribute__ ((regparmcall)) int __msdos_get_kern_ver_str
-					 (char *, size_t);
+                                         (char *, size_t);
+#endif
 
 static void
 get_machine (struct utsname *unm)
