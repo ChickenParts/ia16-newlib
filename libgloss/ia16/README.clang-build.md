@@ -69,17 +69,46 @@ use LLD's native `--oformat=mz` writer so far code and data pointers receive
 DOS loader relocation entries. The existing GCC linker scripts remain
 unchanged.
 
-Run the maintained acceptance harness after building the sysroots. It compiles
-one constructor, destructor, and indirect-call fixture per model, links each
-binary with both Clang and direct `ld.lld`, and checks both guest receipts in
-DOSBox Staging's 386 CPU model using SDL's offscreen video driver. The compiler
-still emits the 8086 instruction set:
+Run the maintained acceptance harness after building the sysroots. It generates
+a Ninja graph for each model, links the same object with both Clang and direct
+`ld.lld`, and checks both guest receipts in DOSBox Staging's 386 CPU model using
+SDL's offscreen video driver. Repeat with native, Full LTO, and Thin LTO objects:
 
 ```sh
 ruby libgloss/ia16/tests/memory-models/run.rb \
   --profile /path/to/ia16-dos-install/profile.sh \
-  --out /path/to/fresh-acceptance-output
+  --out /path/to/fresh-native-output --lto native
+# Repeat with fresh output directories and --lto full / --lto thin.
 ```
+
+The fixture checks startup arguments and environment, constructors/destructors,
+volatile initialized and zero-initialized emulated TLS, allocation, setjmp and
+longjmp, libm, strings, and DOS file/directory operations. Medium and large execute
+direct and indirect calls across more than 64KB of live code. Compact and large
+use more than 64KB of live static data, exercise buffers outside DS, and preserve
+more than 64KB of simultaneous heap allocations. Link maps record the live code
+and far-data sizes. Each lane records commands, hashes, receipts, and guest
+process ownership. A lane's `STOP` file stops and reaps its owned guest if manual
+intervention is needed; the harness imposes no execution deadline.
+
+The emitted instruction set is 8086. The LLVM companion tools
+`llvm/utils/ia16/installed-runtime/run.rb` and `run-8086-matrix.rb` qualify staged,
+relocated installations and execute hashed images on an Intel 8086 PC1512 under
+86Box. The DOSBox run alone does not establish the CPU floor. See those tools'
+README for the required DOS media, ROMs, and image manifest format.
+
+Near-data models share their 64KB data segment with the stack and heap. The MZ
+profiles reserve the remaining DGROUP by default; an explicit `__stack_size`
+linker definition can reduce that reservation. Compact and large release the
+unused initial DOS allocation and acquire separate far-heap arenas. Individual
+objects and functions must fit within one segment; the normal far allocator's
+maximum user request is 65484 bytes, and aggregate allocation is limited by
+available conventional DOS memory and an optional `_heaplen` limit. Arena order
+is independent of DOS first-fit, best-fit, or last-fit allocation strategy.
+`free` makes blocks reusable within the process; negative `_sbrk_r` requests fail
+without moving its break. DOS releases the owned arenas when the process exits.
+The separate `tests/far-heap/build.rb` suite checks all three allocation strategies,
+the single-object boundary, failed growth, and preservation of live allocations.
 
 The build uses generated target headers before generic Newlib headers and the
 compiler's resource headers. It strips ambient include-path variables and

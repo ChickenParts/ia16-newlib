@@ -22,16 +22,16 @@ OptionParser.new do |parser|
   parser.on('--lto MODE', %w[native full thin], 'native, full, or thin') { |value| options[:lto] = value }
   parser.on('--emulator PATH') { |value| options[:emulator] = value }
 end.parse!
-  abort 'missing required option: --profile PATH' unless options[:profile]
-  abort 'missing required option: --out DIR' unless options[:out]
+abort 'missing required option: --profile PATH' unless options[:profile]
+abort 'missing required option: --out DIR' unless options[:out]
 options[:models] = options[:models].map(&:strip)
-  abort "unsupported model in #{options[:models].inspect}" unless (options[:models] - MODELS).empty?
-  abort 'select at least one model' if options[:models].empty?
+abort "unsupported model in #{options[:models].inspect}" unless (options[:models] - MODELS).empty?
+abort 'select at least one model' if options[:models].empty?
 
 profile = Pathname(options[:profile]).realpath
 out = Pathname(options[:out]).expand_path
-  abort "output directory already contains files: #{out}" if out.exist? && !out.children.empty?
-  abort 'acceptance paths may not contain spaces' if [profile, out].any? { |path| path.to_s.match?(/\s/) }
+abort "output directory already contains files: #{out}" if out.exist? && !out.children.empty?
+abort 'acceptance paths may not contain spaces' if [profile, out].any? { |path| path.to_s.match?(/\s/) }
 
 resolve_executable = lambda do |name|
   candidates = name.include?(File::SEPARATOR) ? [name] :
@@ -39,7 +39,7 @@ resolve_executable = lambda do |name|
   candidate = candidates.find { |path| File.file?(path) && File.executable?(path) }
   abort "executable not found: #{name}" unless candidate
   Pathname(candidate).realpath
-  end
+end
 
 emulator = resolve_executable.call(options[:emulator])
 out.mkpath
@@ -63,14 +63,37 @@ options[:models].each do |model|
   compile = "ia16_clang_#{model} #{lto} #{macros} -ffunction-sections -fdata-sections -c #{Shellwords.escape(source.to_s)} -o #{Shellwords.escape(object.to_s)}"
   driver_link = "ia16_link_#{model} #{lto} -Wl,--gc-sections -Wl,-Map,#{lane}/driver.map #{Shellwords.escape(object.to_s)} -o #{Shellwords.escape(driver_image.to_s)}"
   direct_link = "ia16_direct_link_#{model} --gc-sections --Map=#{lane}/direct.map #{Shellwords.escape(object.to_s)} -o #{Shellwords.escape(direct_image.to_s)}"
-  compile_out, compile_error, compile_status = Open3.capture3('bash', '-e', '-c',
-    "#{shell_prefix}#{compile} && #{driver_link} && #{direct_link}")
+  commands = { 'compile' => shell_prefix + compile,
+               'driver' => shell_prefix + driver_link,
+               'direct' => shell_prefix + direct_link }
+  ninja_path = ->(path) { path.to_s.gsub('$', '$$').gsub(' ', '$ ').gsub(':', '$:') }
+  graph = commands.flat_map do |name, command|
+    ['rule ' + name,
+     '  command = ' + Shellwords.join(['bash', '-e', '-c', command]).gsub('$', '$$')]
+  end
+  graph += [
+    "build #{ninja_path.call(object)}: compile #{ninja_path.call(source)} | #{ninja_path.call(profile)}",
+    "build #{ninja_path.call(driver_image)}: driver #{ninja_path.call(object)} | #{ninja_path.call(profile)}",
+    "build #{ninja_path.call(direct_image)}: direct #{ninja_path.call(object)} | #{ninja_path.call(profile)}",
+    "build all: phony #{ninja_path.call(driver_image)} #{ninja_path.call(direct_image)}", 'default all'
+  ]
+  File.write(lane / 'build.ninja', graph.join("\n") + "\n")
+  File.write(lane / 'commands.json', JSON.pretty_generate(commands) + "\n")
+  compile_out, compile_error, compile_status = Open3.capture3('ninja', '-C', lane.to_s, 'all')
+  File.write(lane / 'build.log', compile_out + compile_error)
   unless compile_status.success?
     abort "#{model}: compile/link failed\n#{compile_out}\n#{compile_error}"
   end
 
   images = [driver_image, direct_image]
   abort "#{model}: empty executable" if images.any? { |path| path.size.zero? }
+  %w[driver direct].each do |link|
+    map = (lane / "#{link}.map").read
+    %w[__emutls_get_address sqrtf].each do |symbol|
+      abort "#{model}/#{link}: missing live #{symbol}" unless
+        map.match?(/^\s*[0-9a-f]+\s+[0-9a-f]+\s+[0-9a-f]+\s+\d+\s+#{Regexp.escape(symbol)}\s*$/)
+    end
+  end
   sections = (lane / 'driver.map').read.lines.filter_map do |line|
     match = line.match(/^\s*[0-9a-f]+\s+[0-9a-f]+\s+([0-9a-f]+)\s+\d+\s+(\.\S+)\s*$/)
     match && [match[2], match[1].to_i(16)]
@@ -137,13 +160,17 @@ options[:models].each do |model|
   File.open(guest_log, 'w') do |stream|
     pid = Process.spawn(guest_env, *guest_argv.map(&:to_s), chdir: lane.to_s,
       out: stream, err: [:child, :out], pgroup: true)
+    ownership = { 'state' => 'running', 'namespace_pid' => pid,
+      'command' => guest_argv.map(&:to_s), 'started_utc' => Time.now.utc.to_s }
+    File.write(lane / 'guest-ownership.json', JSON.pretty_generate(ownership) + "\n")
     loop do
       waited, guest_status = Process.wait2(pid, Process::WNOHANG)
       break if waited
       done = (guest_drive / 'DONE.TXT').file?
       failed = (guest_drive / 'FAIL.TXT').file?
-      if done || failed
-        stopped_after_receipt = true
+      stop_requested = (lane / 'STOP').exist?
+      if done || failed || stop_requested
+        stopped_after_receipt = done || failed
         begin
           Process.kill('INT', -pid)
         rescue Errno::ESRCH
@@ -154,6 +181,10 @@ options[:models].each do |model|
       end
       sleep 0.25
     end
+    ownership['state'] = 'reaped'
+    ownership['exit'] = guest_status.exitstatus
+    ownership['signal'] = guest_status.termsig
+    File.write(lane / 'guest-ownership.json', JSON.pretty_generate(ownership) + "\n")
     result_files = %w[DRIVER.TXT DIRECT.TXT].to_h do |name|
       path = guest_drive / name
       [name, path.file? ? path.read.strip : nil]
@@ -165,7 +196,8 @@ options[:models].each do |model|
       'driver_link_sha256' => Digest::SHA256.file(driver_image).hexdigest,
       'direct_link_sha256' => Digest::SHA256.file(direct_image).hexdigest,
       'fixture_sha256' => fixture_sha256, 'lto' => options[:lto],
-      'code_bytes' => code_bytes, 'far_data_bytes' => data_bytes, 'guest_receipts' => result_files,
+      'build_graph' => (lane / 'build.ninja').to_s,
+      'commands' => commands, 'code_bytes' => code_bytes, 'far_data_bytes' => data_bytes, 'guest_receipts' => result_files,
       'guest_done' => (guest_drive / 'DONE.TXT').file?, 'emulated_cpu' => '386',
       'emulator_exit' => guest_status.exitstatus, 'emulator_signal' => guest_status.termsig,
       'stopped_after_guest_receipt' => stopped_after_receipt,
@@ -176,7 +208,7 @@ options[:models].each do |model|
     puts "#{model}: #{complete ? 'PASS' : 'FAIL'}; driver=#{result_files['DRIVER.TXT'].inspect}; direct=#{result_files['DIRECT.TXT'].inspect}"
     abort "#{model}: guest acceptance failed; inspect #{guest_log} and #{lane / 'result.json'}" unless complete
   end
-  end
+end
 
 File.write(out / 'results.json', JSON.pretty_generate({
   'status' => 'pass', 'models' => results, 'profile_sha256' => Digest::SHA256.file(profile).hexdigest,
