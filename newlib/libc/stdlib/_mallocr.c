@@ -306,6 +306,18 @@ extern "C" {
 
 #include <reent.h>
 
+#if defined(__clang__) && defined(__IA16__) && defined(__MSDOS__) && defined(__FAR_DATA__)
+#define IA16_DOS_FAR_HEAP 1
+/* A full DOS block supplies 64KB less its pool-header and final paragraphs.
+   Leave a terminal minimum chunk as well as the requested padded chunk. */
+#define IA16_DOS_FAR_ARENA_CAPACITY 0xffe0UL
+#define MALLOC_MAX_REQUEST (IA16_DOS_FAR_ARENA_CAPACITY - MINSIZE)
+extern int __ia16_far_heap_contains(const void *, size_t);
+#else
+#define IA16_DOS_FAR_HEAP 0
+#define MALLOC_MAX_REQUEST INT_MAX
+#endif
+
 #define POINTER_UINT unsigned _POINTER_INT
 #define SEPARATE_OBJECTS
 #define HAVE_MMAP 0
@@ -321,7 +333,11 @@ extern "C" {
 
 #ifndef _WIN32
 #ifndef HAVE_SYSCONF_PAGESIZE
-#ifdef SMALL_MEMORY
+#if IA16_DOS_FAR_HEAP
+/* DOS arena boundaries and growth are paragraph granular. In particular the
+   correction request must fit before offset 65536 in the same selector. */
+#define malloc_getpagesize (16)
+#elif defined(SMALL_MEMORY)
 #define malloc_getpagesize (128)
 #else
 #define malloc_getpagesize (4096)
@@ -361,6 +377,11 @@ extern void __malloc_unlock();
 #define RONECALL
 
 #endif /* ! _LIBC */
+
+#ifndef IA16_DOS_FAR_HEAP
+#define IA16_DOS_FAR_HEAP 0
+#define MALLOC_MAX_REQUEST INT_MAX
+#endif
 
 /*
     Debugging:
@@ -1789,11 +1810,16 @@ static void do_check_chunk(p) mchunkptr p;
   assert(!chunk_is_mmapped(p));
 
   /* Check for legal address ... */
+#if IA16_DOS_FAR_HEAP
+  if (p != initial_top)
+    assert(__ia16_far_heap_contains(p, sz));
+#else
   assert((char*)p >= sbrk_base);
   if (p != top) 
     assert((char*)p + sz <= (char*)top);
   else
     assert((char*)p + sz <= sbrk_base + sbrked_mem);
+#endif
 
 }
 
@@ -2156,6 +2182,17 @@ static void malloc_extend_top(RARG nb) RDECL INTERNAL_SIZE_T nb;
   char*     old_end      = (char*)(chunk_at_offset(old_top, old_top_size));
 
   /* Pad request with top_pad plus minimal overhead */
+
+#if IA16_DOS_FAR_HEAP
+  /* Check the whole chunk and padding before any MORECORE call. Requests
+     and corrections must fit together in one representable far segment. */
+  if (nb > IA16_DOS_FAR_ARENA_CAPACITY - MINSIZE ||
+      top_pad > IA16_DOS_FAR_ARENA_CAPACITY - MINSIZE - nb)
+  {
+    RERRNO = ENOMEM;
+    return;
+  }
+#endif
   
   INTERNAL_SIZE_T    sbrk_size     = nb + top_pad + MINSIZE;
   unsigned long pagesz    = malloc_getpagesize;
@@ -2166,6 +2203,14 @@ static void malloc_extend_top(RARG nb) RDECL INTERNAL_SIZE_T nb;
 
   if (sbrk_base != (char*)(-1))
     sbrk_size = (sbrk_size + (pagesz - 1)) & ~(pagesz - 1);
+
+#if IA16_DOS_FAR_HEAP
+  if (sbrk_size > IA16_DOS_FAR_ARENA_CAPACITY)
+  {
+    RERRNO = ENOMEM;
+    return;
+  }
+#endif
 
   brk = (char*)(MORECORE (sbrk_size));
 
@@ -2188,7 +2233,11 @@ static void malloc_extend_top(RARG nb) RDECL INTERNAL_SIZE_T nb;
     if (sbrk_base == (char*)(-1))  /* First time through. Record base */
       sbrk_base = brk;
     else  /* Someone else called sbrk().  Count those bytes as sbrked_mem. */
+#if !IA16_DOS_FAR_HEAP
       sbrked_mem += brk - (char*)old_end;
+#else
+      (void)0; /* A selector gap is not allocated storage. */
+#endif
 
     /* Guarantee alignment of first new chunk made from this space */
     front_misalign = (POINTER_UINT)chunk2mem(brk) & MALLOC_ALIGN_MASK;
@@ -2358,7 +2407,7 @@ Void_t* mALLOc(RARG bytes) RDECL size_t bytes;
   INTERNAL_SIZE_T nb  = request2size(bytes);  /* padded request size; */
 
   /* Check for overflow and just fail, if so. */
-  if (nb > INT_MAX || nb < bytes)
+  if (nb > MALLOC_MAX_REQUEST || nb < bytes)
   {
     RERRNO = ENOMEM;
     return 0;
@@ -2824,7 +2873,7 @@ Void_t* rEALLOc(RARG oldmem, bytes) RDECL Void_t* oldmem; size_t bytes;
   nb = request2size(bytes);
 
   /* Check for overflow and just fail, if so. */
-  if (nb > INT_MAX || nb < bytes)
+  if (nb > MALLOC_MAX_REQUEST || nb < bytes)
   {
     RERRNO = ENOMEM;
     return 0;
@@ -3367,7 +3416,9 @@ int malloc_trim(RARG pad) RDECL size_t pad;
         top_size = current_brk - (char*)top;
         if (top_size >= (long)MINSIZE) /* if not, we are very very dead! */
         {
+#if !IA16_DOS_FAR_HEAP
           sbrked_mem = current_brk - sbrk_base;
+#endif
           set_head(top, top_size | PREV_INUSE);
         }
         check_chunk(top);
