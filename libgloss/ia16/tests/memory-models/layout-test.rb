@@ -59,6 +59,29 @@ class IA16SegmentPackingTest < Minitest::Test
         "#{model}: a valid near-data object cannot have the null pointer address"
     end
   end
+  def test_full_segment_far_objects_keep_every_addressable_byte
+    %w[compact large].each do |model|
+      [false, true].each do |initialized|
+        suffix = initialized ? ' = {[65535] = 42}' : ''
+        map = build(model, "unsigned long neighbor __attribute__((aligned(8))) = 1; volatile unsigned char full[65536]#{suffix}; int _start(void) { return full[65535] + neighbor; }\n")
+        line = map.lines.find { |entry| entry.match?(/\sfull$/) }
+        refute_nil line, "#{model}: full segment object"
+        assert_equal 0, line.split[0].to_i(16), 'full object must start at segment offset zero'
+        header_size = File.binread(File.join(@dir, 'output.exe'), 10).unpack('v*')[4] * 16
+        bytes = File.binread(File.join(@dir, 'output.exe'), 65_536, header_size + line.split[1].to_i(16))
+        assert_equal "\0" * 65_535 + (initialized ? '*' : "\0"), bytes
+      end
+    end
+  end
+  def test_far_object_larger_than_one_segment_is_rejected
+    File.write(File.join(@dir, 'input.c'), 'unsigned char oversized[65537]; int _start(void) { return oversized[0]; }')
+    run_command(TOOLS / 'clang', '--target=ia16-pc-msdos', '-march=8086', '-mmemory-model=compact',
+      '-ffreestanding', '-Oz', '-c', 'input.c', '-o', 'input.o')
+    _, stderr, status = Open3.capture3((TOOLS / 'ld.lld').to_s, '-m', 'elf_ia16', '--oformat=mz',
+      '-T', 'dos.ld', 'input.o', '-o', 'output.exe', chdir: @dir)
+    refute status.success?, 'one object cannot cross a segment boundary'
+    assert_includes stderr, 'will not fit'
+  end
   def test_far_bss_and_initialized_data_live_outside_dgroup_in_separate_banks
     %w[compact large].each do |model|
       map = build(model, <<~'C')

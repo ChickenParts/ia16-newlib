@@ -26,7 +26,7 @@ SECTIONS
   } > metadata
   .ia16_segelf_other 0 (NOLOAD) : { KEEP(*(".*!" ".*&")) } > metadata
   CLASS(far_text) { *(.fartext .fartext.*) }
-  CLASS(far_data) { *(.farrodata .farrodata.* .fardata .fardata.* .farbss .farbss.*) }
+  CLASS(far_data) { *(SORT_BY_ALIGNMENT(.farrodata .farrodata.* .fardata .fardata.* .farbss .farbss.*)) }
   .text 0 :
   {
     __stext = .;

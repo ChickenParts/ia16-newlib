@@ -31,6 +31,12 @@ batch = ['@echo off']
     [abort_image, [abort_object], ["ia16_link_#{model}", abort_object, '-o', abort_image]],
     [create_image, [create_object, hook_object], ["ia16_link_#{model}", create_object, hook_object, '-o', create_image]]
   ]
+  if %w[compact large].include?(model)
+    boundary_object = out / "#{model}-boundary.o"
+    boundary_image = out / "BD#{i}.#{extension}"
+    jobs += [[boundary_object, [source / 'boundary.c'], ["ia16_clang_#{model}", '-c', source / 'boundary.c', '-o', boundary_object]],
+             [boundary_image, [boundary_object], ["ia16_link_#{model}", boundary_object, '-o', boundary_image]]]
+  end
   jobs.each do |output, inputs, arguments|
     command = ". #{options[:profile].to_s.shellescape} && #{Shellwords.join(arguments.map(&:to_s))}"
     graph += ["build #{escape.call(output)}: run #{inputs.map(&escape).join(' ')} | #{escape.call(options[:profile])}",
@@ -40,6 +46,10 @@ batch = ['@echo off']
              { model: model, kind: 'create', path: create_image.to_s, receipt: "C#{i}.TXT" }]
   batch += [abort_image.basename.to_s, 'if errorlevel 135 goto fail', "if errorlevel 134 goto ok#{i}",
             'goto fail', ":ok#{i}", "#{create_image.basename} > C#{i}.TXT", 'if errorlevel 1 goto fail']
+  if %w[compact large].include?(model)
+    images << { model: model, kind: 'boundary', path: boundary_image.to_s, receipt: "B#{i}.TXT" }
+    batch += ["#{boundary_image.basename} > B#{i}.TXT", 'if errorlevel 1 goto fail']
+  end
 end
 graph += ["build all: phony #{images.map { |row| escape.call(row[:path]) }.join(' ')}", 'default all']
 (out / 'build.ninja').write(graph.join("\n") + "\n")

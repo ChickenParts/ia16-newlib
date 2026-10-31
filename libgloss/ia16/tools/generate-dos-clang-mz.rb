@@ -19,10 +19,9 @@ module IA16ClangSysroot
         name = ".#{section}.#{i}"
         lma = "ALIGN(LOADADDR(#{previous}) + SIZEOF(#{previous}), 16)"
         previous = name
-        # Initialized output also materializes far BSS, so DOS loads its zero
-        # bytes without requiring a separate startup pass for every bank.
-        initialized = section == 'fardata' ? ' BYTE(0)' : ''
-        "  #{name} 0 : AT(#{lma}) { CLASS(#{klass})#{initialized} } > #{region}_#{i}"
+        # The initialized DGROUP null word follows every far bank, so the MZ
+        # image includes their zero-filled gaps without stealing a payload byte.
+        "  #{name} 0 : AT(#{lma}) { CLASS(#{klass}) } > #{region}_#{i}"
       end.join("\n")
     end
     replacements['@DATA_LMA@'] = "ALIGN(LOADADDR(#{previous}) + SIZEOF(#{previous}), 16)"
