@@ -108,6 +108,19 @@ __msdos_crt_bail:
 	.popsection
 .Lmcb_ok:
 #endif
+#if defined(__clang__) && defined(__FAR_DATA__)
+	/* DOS loads MZ programs with their maximum initial allocation. Release
+	   everything beyond resident code/data/stack before malloc owns arenas. */
+	pushw %ds
+	popw %es		# the entry DS still names the PSP
+	movw $__ia16_resident_paragraphs, %bx
+	movb $0x4a, %ah
+	int $0x21
+	jnc .Lfar_resident_ok
+	movw $0x4cff, %ax
+	int $0x21
+.Lfar_resident_ok:
+#endif
 #ifndef TINY
 	pushw	%ss
 	popw	%es

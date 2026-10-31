@@ -119,7 +119,7 @@ SECTIONS
     __heap_end_minimum = ALIGN(__ebss, 8);
   } > near_data
 
-  PROVIDE(__stack_size = 0x1000);
+  PROVIDE(__stack_size = 0x10000 - ALIGN(__ebss, 16));
   .stack ALIGN(ADDR(.bss) + SIZEOF(.bss), 16) (NOLOAD)
        : AT(__dgroup + ALIGN(ADDR(.bss) + SIZEOF(.bss), 16))
   {
@@ -130,4 +130,6 @@ SECTIONS
   ASSERT(__stack_end <= 0x10000,
          "Error: DOS DGROUP plus stack exceeds 64KB.")
   _end = __stack_end;
+  __ia16_resident_paragraphs =
+      (LOADADDR(.stack) + SIZEOF(.stack) + 15) / 16 + 0x10;
 }
