@@ -1,4 +1,4 @@
-#if !defined(__clang__) || !defined(__FAR_DATA__)
+#ifndef __clang__
 #include "call-cvt.h"
 
 	.arch i8086,jumps

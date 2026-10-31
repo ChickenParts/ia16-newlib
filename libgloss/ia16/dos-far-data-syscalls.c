@@ -46,13 +46,6 @@ int dup(int fd) {
   if (carry) _REENT->_errno = result;
   return carry ? -1 : result;
 }
-int dup2(int fd, int target) {
-  int result, carry;
-  __asm__ volatile("int $0x21; sbb %0,%0" : "=r"(carry), "=a"(result) :
-    "Rah"((char)0x46), "b"(fd), "c"(target) : "cc", "memory");
-  if (carry) _REENT->_errno = result;
-  return carry ? -1 : target;
-}
 int _isatty_r(struct _reent *r, int fd) {
   int result, carry, device;
   __asm__ volatile("int $0x21; sbb %0,%0" : "=r"(carry), "=a"(result), "=d"(device) :

@@ -27,7 +27,7 @@ module IA16ClangSysroot
 
   DOS_COMMON_OBJECTS = %w[
     dos-emutls dos-far-data-syscalls dos-access dos-chdir dos-chmod dos-closer dos-cvt-file-time dos-dbcs
-    dos-dbcs-strcspn dos-dup dos-dup2 dos-environ dos-argv dos-kill dos-fstatr dos-getcwd
+    dos-dbcs-strcspn dos-dup dos-dup2 dos-dup2-clang dos-environ dos-argv dos-kill dos-fstatr dos-getcwd
     dos-getcwd-impl dos-gettimeofdayr dos-heaplen dos-isattyr dos-lseekr dos-mkdir
     dos-mkdirr dos-near-data-segment dos-openr dos-psp dos-readr dos-realpath
     dos-renamer dos-rmdir dos-sbrkr dos-statr dos-timesr dos-uname dos-uname-impl
