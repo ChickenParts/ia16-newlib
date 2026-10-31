@@ -23,13 +23,18 @@ batch = ['@echo off']
 %w[tiny small medium compact large].each_with_index do |model, i|
   extension = model == 'tiny' ? 'COM' : 'EXE'
   abort_image, create_image = %w[AB CR].map { |name| out / "#{name}#{i}.#{extension}" }
+  dup_image = out / "DP#{i}.#{extension}"
   abort_object, create_object, hook_object = %w[abort create hook].map { |name| out / "#{model}-#{name}.o" }
+  dup_object, dup_hook = %w[dup2 dup2-hook].map { |name| out / "#{model}-#{name}.o" }
   jobs = [
     [abort_object, [source / 'abort.c'], ["ia16_clang_#{model}", "-DABORT_FILE=\"A#{i}.TXT\"", '-c', source / 'abort.c', '-o', abort_object]],
     [create_object, [source / 'create.c'], ["ia16_clang_#{model}", '-c', source / 'create.c', '-o', create_object]],
     [hook_object, [source / 'create-hook.S', source.parent.parent / 'call-cvt.h'], ["ia16_clang_#{model}", '-I', source.parent.parent, '-c', source / 'create-hook.S', '-o', hook_object]],
     [abort_image, [abort_object], ["ia16_link_#{model}", abort_object, '-o', abort_image]],
-    [create_image, [create_object, hook_object], ["ia16_link_#{model}", create_object, hook_object, '-o', create_image]]
+    [create_image, [create_object, hook_object], ["ia16_link_#{model}", create_object, hook_object, '-o', create_image]],
+    [dup_object, [source / 'dup2.c'], ["ia16_clang_#{model}", '-c', source / 'dup2.c', '-o', dup_object]],
+    [dup_hook, [source / 'dup2-hook.S', source.parent.parent / 'call-cvt.h'], ["ia16_clang_#{model}", '-I', source.parent.parent, '-c', source / 'dup2-hook.S', '-o', dup_hook]],
+    [dup_image, [dup_object, dup_hook], ["ia16_link_#{model}", dup_object, dup_hook, '-o', dup_image]]
   ]
   if %w[compact large].include?(model)
     boundary_object = out / "#{model}-boundary.o"
@@ -43,9 +48,11 @@ batch = ['@echo off']
               '  cmd = ' + Shellwords.join(['bash', '-e', '-c', command]).gsub('$', '$$')]
   end
   images += [{ model: model, kind: 'abort', path: abort_image.to_s, receipt: "A#{i}.TXT" },
-             { model: model, kind: 'create', path: create_image.to_s, receipt: "C#{i}.TXT" }]
+             { model: model, kind: 'create', path: create_image.to_s, receipt: "C#{i}.TXT" },
+             { model: model, kind: 'dup2', path: dup_image.to_s, receipt: "D#{i}.TXT" }]
   batch += [abort_image.basename.to_s, 'if errorlevel 135 goto fail', "if errorlevel 134 goto ok#{i}",
-            'goto fail', ":ok#{i}", "#{create_image.basename} > C#{i}.TXT", 'if errorlevel 1 goto fail']
+            'goto fail', ":ok#{i}", "#{create_image.basename} > C#{i}.TXT", 'if errorlevel 1 goto fail',
+            "#{dup_image.basename} > D#{i}.TXT", 'if errorlevel 1 goto fail']
   if %w[compact large].include?(model)
     images << { model: model, kind: 'boundary', path: boundary_image.to_s, receipt: "B#{i}.TXT" }
     batch += ["#{boundary_image.basename} > B#{i}.TXT", 'if errorlevel 1 goto fail']

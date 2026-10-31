@@ -23,6 +23,14 @@ The temporary INT 21h hook captures the complete create-attribute word and
 rejects reserved high bits. The old CL-only provider gives `CX 0600` and fails.
 The hook restores the original vector before reporting its result.
 
+Each `D0.TXT` through `D4.TXT` reports successful self-duplication, `EBADF`
+for an invalid source, a preserved writable target, zero destructive mutations,
+and `PASS dup2`. Its temporary hook models DOS kernels that close AH=46h's
+destination before rejecting the source. A separate baseline write proves that
+the target was live before that call. The corrected provider validates with
+AH=44h and never enters the destructive path, catching the regression even in
+DOSBox versions whose own AH=46h implementation preserves the target.
+
 `B3.TXT` and `B4.TXT` contain `PASS boundary`. These compact/large programs
 load one complete 65536-byte zero-initialized object and write its first and
 last bytes. The initialized DGROUP null word follows the banks, ensuring that

@@ -55,6 +55,7 @@ images = images.map do |row|
            when 'abort' then receipt.include?('abort () called')
            when 'create' then receipt.strip == "CX 0000\nPASS create"
            when 'boundary' then receipt.strip == 'PASS boundary'
+           when 'dup2' then receipt.strip == "PASS self\nPASS baseline\nPASS invalid\nPASS preserved\nMUTATIONS 0\nPASS dup2"
            end
   puts "#{row.fetch('model')}/#{row.fetch('kind')}: #{passed ? 'PASS' : 'FAIL'}"
   row.merge('pass' => passed, 'receipt_text' => receipt)
