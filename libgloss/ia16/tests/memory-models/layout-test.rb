@@ -47,6 +47,18 @@ class IA16SegmentPackingTest < Minitest::Test
       assert_operator nonempty, :>=, 2, model
     end
   end
+  def test_first_near_data_object_has_a_nonnull_address
+    %w[small medium].each do |model|
+      map = build(model, <<~'C')
+        int first_object = 7;
+        int _start(void) { return first_object; }
+      C
+      line = map.lines.find { |entry| entry.match?(/\sfirst_object$/) }
+      refute_nil line, "#{model}: first object"
+      assert_operator line.split[0].to_i(16), :>, 0,
+        "#{model}: a valid near-data object cannot have the null pointer address"
+    end
+  end
   def test_far_bss_and_initialized_data_live_outside_dgroup_in_separate_banks
     %w[compact large].each do |model|
       map = build(model, <<~'C')

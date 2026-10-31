@@ -83,7 +83,7 @@ class IA16DOSMemoryModelScriptsTest < Minitest::Test
     crt = File.read(IA16 / 'dos-models-crt0.S')
     assert_includes crt, "movw\t$0, %ax\n\tpushw\t%ax"
     assert_includes crt, 'CALL_ (atexit)'
-    assert_includes crt, "lcall\t*(%si)"
+    assert_includes crt, "lcall\t*%ss:(%si)"
     assert_match(/__IA16_CMODEL_IS_FAR_TEXT[\s\S]*?\n\tlret\n/, crt)
   end
 

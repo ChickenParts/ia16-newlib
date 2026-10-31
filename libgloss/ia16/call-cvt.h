@@ -136,6 +136,13 @@
 # define TEXT_PTR_(func)	SEG_RELOC_ (.+2, func); \
 				.short func, 0
 #endif
+/* C stack arguments always belong to SS, including when far-data code
+   leaves DS naming another object. Preserve the GNU macro expansion. */
+#ifdef __clang__
+# define STACK_ARG_(n) %ss:FAR_ADJ__+n(%bx)
+#else
+# define STACK_ARG_(n) FAR_ADJ__+n(%bx)
+#endif
 #define DATA_(tag)		.data
 #if defined __IA16_CALLCVT_REGPARMCALL
 # if __IA16_REGPARMCALL_ABI - 0 != 20180814L
@@ -150,8 +157,8 @@
 # define ARG0W_BX_		%ax
 # define ARG2W_BX_		%dx
 # define ARG4W_BX_		%cx
-# define ARG6W_BX_		FAR_ADJ__+2(%bx)
-# define ARG8W_BX_		FAR_ADJ__+4(%bx)
+# define ARG6W_BX_		STACK_ARG_(2)
+# define ARG8W_BX_		STACK_ARG_(4)
 # define MOV_ARG0W_BX_(reg)	.ifnc %ax, reg; \
 				movw %ax, reg; \
 				.endif
@@ -161,11 +168,11 @@
 # define MOV_ARG4W_BX_(reg)	.ifnc %cx, reg; \
 				movw %cx, reg; \
 				.endif
-# define MOV_ARG4W2_BX_(reg)	movw FAR_ADJ__+2(%bx), reg
-# define MOV_ARG6W_BX_(reg)	movw FAR_ADJ__+2(%bx), reg
-# define MOV_ARG6W2_BX_(reg)	movw FAR_ADJ__+4(%bx), reg
-# define MOV_ARG8W_BX_(reg)	movw FAR_ADJ__+4(%bx), reg
-# define MOV_ARG8W2_BX_(reg)	movw FAR_ADJ__+6(%bx), reg
+# define MOV_ARG4W2_BX_(reg)	movw STACK_ARG_(2), reg
+# define MOV_ARG6W_BX_(reg)	movw STACK_ARG_(2), reg
+# define MOV_ARG6W2_BX_(reg)	movw STACK_ARG_(4), reg
+# define MOV_ARG8W_BX_(reg)	movw STACK_ARG_(4), reg
+# define MOV_ARG8W2_BX_(reg)	movw STACK_ARG_(6), reg
 # ifdef __OPTIMIZE_SIZE__
 #   define MOV_ARG0W_BX_CLOBBER_(reg) \
 				.ifnc %ax, reg; \
@@ -201,9 +208,9 @@
 # define MOV_ARG4B_BX_(reg)	.ifnc %cl, reg; \
 				movb %cl, reg; \
 				.endif
-# define MOV_ARG6B_BX_(reg)	movb FAR_ADJ__+2(%bx), reg
-# define MOV_ARG8B_BX_(reg)	movb FAR_ADJ__+4(%bx), reg
-# define MOV_ARG8B2_BX_(reg)	movb FAR_ADJ__+6(%bx), reg
+# define MOV_ARG6B_BX_(reg)	movb STACK_ARG_(2), reg
+# define MOV_ARG8B_BX_(reg)	movb STACK_ARG_(4), reg
+# define MOV_ARG8B2_BX_(reg)	movb STACK_ARG_(6), reg
 # define LDS_ARG0W_BX_(reg)	movw %dx, %ds; \
 				.ifnc %ax, reg; \
 				movw %ax, reg; \
@@ -220,8 +227,8 @@
 				.ifnc %dx, reg; \
 				movw %dx, reg; \
 				.endif
-# define LDS_ARG4W2_BX_(reg)	ldsw FAR_ADJ__+2(%bx), reg
-# define LES_ARG4W2_BX_(reg)	lesw FAR_ADJ__+2(%bx), reg
+# define LDS_ARG4W2_BX_(reg)	ldsw STACK_ARG_(2), reg
+# define LES_ARG4W2_BX_(reg)	lesw STACK_ARG_(2), reg
 # define RET_(n)		.if (n)>6; \
 				RET__ $((n)-6); \
 				.else; \
@@ -235,34 +242,34 @@
 #else
 # define ENTER_BX_(n)		movw %sp, %bx
 # define ENTER2_BX_(n)		movw %sp, %bx
-# define ARG0W_BX_		FAR_ADJ__+2(%bx)
-# define ARG2W_BX_		FAR_ADJ__+4(%bx)
-# define ARG4W_BX_		FAR_ADJ__+6(%bx)
-# define ARG6W_BX_		FAR_ADJ__+8(%bx)
-# define ARG8W_BX_		FAR_ADJ__+10(%bx)
-# define MOV_ARG0W_BX_(reg)	movw FAR_ADJ__+2(%bx), reg
-# define MOV_ARG2W_BX_(reg)	movw FAR_ADJ__+4(%bx), reg
-# define MOV_ARG4W_BX_(reg)	movw FAR_ADJ__+6(%bx), reg
-# define MOV_ARG4W2_BX_(reg)	movw FAR_ADJ__+6(%bx), reg
-# define MOV_ARG6W_BX_(reg)	movw FAR_ADJ__+8(%bx), reg
-# define MOV_ARG6W2_BX_(reg)	movw FAR_ADJ__+8(%bx), reg
-# define MOV_ARG8W_BX_(reg)	movw FAR_ADJ__+10(%bx), reg
-# define MOV_ARG8W2_BX_(reg)	movw FAR_ADJ__+10(%bx), reg
+# define ARG0W_BX_		STACK_ARG_(2)
+# define ARG2W_BX_		STACK_ARG_(4)
+# define ARG4W_BX_		STACK_ARG_(6)
+# define ARG6W_BX_		STACK_ARG_(8)
+# define ARG8W_BX_		STACK_ARG_(10)
+# define MOV_ARG0W_BX_(reg)	movw STACK_ARG_(2), reg
+# define MOV_ARG2W_BX_(reg)	movw STACK_ARG_(4), reg
+# define MOV_ARG4W_BX_(reg)	movw STACK_ARG_(6), reg
+# define MOV_ARG4W2_BX_(reg)	movw STACK_ARG_(6), reg
+# define MOV_ARG6W_BX_(reg)	movw STACK_ARG_(8), reg
+# define MOV_ARG6W2_BX_(reg)	movw STACK_ARG_(8), reg
+# define MOV_ARG8W_BX_(reg)	movw STACK_ARG_(10), reg
+# define MOV_ARG8W2_BX_(reg)	movw STACK_ARG_(10), reg
 # define MOV_ARG0W_BX_CLOBBER_(reg) MOV_ARG0W_BX_(reg)
 # define MOV_ARG2W_BX_CLOBBER_(reg) MOV_ARG2W_BX_(reg)
 # define MOV_ARG4W_BX_CLOBBER_(reg) MOV_ARG4W_BX_(reg)
-# define MOV_ARG0B_BX_(reg)	movb FAR_ADJ__+2(%bx), reg
-# define MOV_ARG2B_BX_(reg)	movb FAR_ADJ__+4(%bx), reg
-# define MOV_ARG4B_BX_(reg)	movb FAR_ADJ__+6(%bx), reg
-# define MOV_ARG6B_BX_(reg)	movb FAR_ADJ__+8(%bx), reg
-# define MOV_ARG8B_BX_(reg)	movb FAR_ADJ__+10(%bx), reg
-# define MOV_ARG8B2_BX_(reg)	movb FAR_ADJ__+10(%bx), reg
-# define LDS_ARG0W_BX_(reg)	ldsw FAR_ADJ__+2(%bx), reg
-# define LES_ARG0W_BX_(reg)	lesw FAR_ADJ__+2(%bx), reg
-# define LDS_ARG2W_BX_(reg)	ldsw FAR_ADJ__+4(%bx), reg
-# define LES_ARG2W_BX_(reg)	lesw FAR_ADJ__+4(%bx), reg
-# define LDS_ARG4W2_BX_(reg)	ldsw FAR_ADJ__+6(%bx), reg
-# define LES_ARG4W2_BX_(reg)	lesw FAR_ADJ__+6(%bx), reg
+# define MOV_ARG0B_BX_(reg)	movb STACK_ARG_(2), reg
+# define MOV_ARG2B_BX_(reg)	movb STACK_ARG_(4), reg
+# define MOV_ARG4B_BX_(reg)	movb STACK_ARG_(6), reg
+# define MOV_ARG6B_BX_(reg)	movb STACK_ARG_(8), reg
+# define MOV_ARG8B_BX_(reg)	movb STACK_ARG_(10), reg
+# define MOV_ARG8B2_BX_(reg)	movb STACK_ARG_(10), reg
+# define LDS_ARG0W_BX_(reg)	ldsw STACK_ARG_(2), reg
+# define LES_ARG0W_BX_(reg)	lesw STACK_ARG_(2), reg
+# define LDS_ARG2W_BX_(reg)	ldsw STACK_ARG_(4), reg
+# define LES_ARG2W_BX_(reg)	lesw STACK_ARG_(4), reg
+# define LDS_ARG4W2_BX_(reg)	ldsw STACK_ARG_(6), reg
+# define LES_ARG4W2_BX_(reg)	lesw STACK_ARG_(6), reg
 # ifdef __IA16_CALLCVT_STDCALL
 #   define RET_(n)		.if (n); \
 				RET__ $(n); \

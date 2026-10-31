@@ -65,6 +65,8 @@ SECTIONS
   .data 0 : AT(@DATA_LMA@)
   {
     __sdata = .;
+    /* Offset zero is the null pointer in the near-data ABI. */
+    SHORT(0)
 
     __ia16_ctors_start = .;
     KEEP(*(SORT(.ctors.*)))

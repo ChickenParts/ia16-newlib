@@ -169,10 +169,14 @@ module IA16ClangSysroot
       # Generic string C providers honor every data/code pointer ABI. The
       # historical IA-16 assembly strings have near-data signatures; including
       # both gives duplicate strong symbols and archive-order-dependent ABI.
+      # The BSP owns environ, abort and getpid. With reentrant syscalls supplied,
+      # generic linkr/signalr only emit conflicting dummy data definitions.
       libc_sources.reject! do |source|
         relative = source.relative_path_from(@source / 'newlib').to_s
         (relative.start_with?('libc/machine/ia16/') && source.extname == '.S' &&
-          source.basename.to_s != 'setjmp.S') || relative == 'libc/stdlib/environ.c'
+          source.basename.to_s != 'setjmp.S') ||
+          %w[libc/stdlib/environ.c libc/stdlib/abort.c libc/syscalls/sysgetpid.c
+             libc/reent/linkr.c libc/reent/signalr.c].include?(relative)
       end
       libm_sources = source_files(variables.words('libm_a_SOURCES'), 'newlib')
       raise "#{model}: configured Newlib source list is empty" if libc_sources.empty? || libm_sources.empty?
@@ -420,7 +424,7 @@ module IA16ClangSysroot
         profiles << '}'
         linker = [@clang, "--target=#{TARGET}", "--sysroot=#{sysroot}", '-march=8086',
                   "-mmemory-model=#{model}", "-resource-dir=#{@builtins_root}",
-                  '-fuse-ld=lld', '-Wl,-m,elf_ia16',
+                  '-fuse-ld=lld', '-femulated-tls', '-Wl,-m,elf_ia16',
                   '-Wl,-T,' + (sysroot / 'lib' / config.fetch(:linker_script)).to_s,
                   '-L', sysroot / 'lib', sysroot / 'lib' / config.fetch(:startup)]
         linker << (model == :tiny ? '-Wl,--oformat=binary' : '-Wl,--oformat=mz')
@@ -429,7 +433,8 @@ module IA16ClangSysroot
         profiles << "ia16_link_#{model}() {"
         profiles << "  #{Shellwords.join(linker.map(&:to_s))} \"$@\" #{Shellwords.join(tail.map(&:to_s))}"
         profiles << '}'
-        direct = [@ld, '-m', 'elf_ia16']
+        direct = [@ld, '-m', 'elf_ia16', '-plugin-opt=mcpu=8086',
+                  '-plugin-opt=-emulated-tls']
         direct << '--oformat=mz' unless model == :tiny
         direct += ['-T',
                   sysroot / 'lib' / config.fetch(:linker_script), '-L', sysroot / 'lib',

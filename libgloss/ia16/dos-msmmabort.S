@@ -26,7 +26,12 @@ abort:
 	pushfw
 	cli
 	pushw	%ds
+#if defined(__clang__) && defined(__FAR_CODE__)
+	/* This stub can live in a different code bank from the primary text. */
+	movw	%cs:.Labort_dgroup, %ds
+#else
 	movw	%cs:__ia16_near_data_segment, %ds
+#endif
 	popw	abort_stack-8
 	popw	abort_stack-2
 	movw	%sp,	abort_stack-4
@@ -46,6 +51,12 @@ abort:
 	cld
 	sti
 	CALL_ (__ia16_abort_impl)
+
+#if defined(__clang__) && defined(__FAR_CODE__)
+.Labort_dgroup:
+	SEG_RELOC_ (., __dgroup)
+	.short 0
+#endif
 
 	.bss
 	.skip	128

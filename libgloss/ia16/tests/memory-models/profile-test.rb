@@ -28,11 +28,13 @@ class IA16DriverProfilesTest < Minitest::Test
       profile = (root / 'profile.sh').read
       IA16ClangSysroot::MODELS.each_key do |model|
         link = profile[/ia16_link_#{model}\(\) \{\n(.*?)\n\}/m, 1]
+        assert_includes link, '-femulated-tls', "#{model}: LTO must preserve the TLS runtime policy"
         refute_includes link, '-nostdlib', "#{model}: normal links must exercise driver lookup"
         refute_includes link, 'libclang_rt.builtins', "#{model}: archive must be selected by Clang"
         assert_includes link, model == :tiny ? '-Wl,--oformat\=binary' : '-Wl,--oformat\=mz'
         assert_includes link, '-resource-dir', "#{model}: select the supplied builtins installation"
         direct = profile[/ia16_direct_link_#{model}\(\) \{\n(.*?)\n\}/m, 1]
+        assert_includes direct, '-plugin-opt\=-emulated-tls'
         assert_includes direct, '--print-libgcc-file-name', "#{model}: direct link must query the matching archive"
         assert_includes direct, "mmemory-model\\=#{model}"
         compile = profile[/ia16_clang_#{model}\(\) \{\n(.*?)\n\}/m, 1]

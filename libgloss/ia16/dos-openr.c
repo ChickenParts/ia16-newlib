@@ -70,7 +70,7 @@ static int dos_creat (struct _reent *reent, const char *pathname,
   int ret, carry;
   asm volatile ("int $0x21; sbb %0, %0" :
 		"=r"(carry), "=a"(ret) :
-	        "Rah"((char)0x3c), "Rcl"(attr), "d"(FP_OFF(pathname)),
+	        "Rah"((char)0x3c), "c"((unsigned)attr), "d"(FP_OFF(pathname)),
 		"Rds"(FP_SEG(pathname)) : "cc");
   if (carry)
     {

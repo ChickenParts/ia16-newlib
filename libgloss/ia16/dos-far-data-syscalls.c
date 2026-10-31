@@ -39,6 +39,20 @@ int _close_r(struct _reent *r, int fd) {
   if (carry) r->_errno = result;
   return carry ? -1 : 0;
 }
+int dup(int fd) {
+  int result, carry;
+  __asm__ volatile("int $0x21; sbb %0,%0" : "=r"(carry), "=a"(result) :
+    "Rah"((char)0x45), "b"(fd) : "cc", "memory");
+  if (carry) _REENT->_errno = result;
+  return carry ? -1 : result;
+}
+int dup2(int fd, int target) {
+  int result, carry;
+  __asm__ volatile("int $0x21; sbb %0,%0" : "=r"(carry), "=a"(result) :
+    "Rah"((char)0x46), "b"(fd), "c"(target) : "cc", "memory");
+  if (carry) _REENT->_errno = result;
+  return carry ? -1 : target;
+}
 int _isatty_r(struct _reent *r, int fd) {
   int result, carry, device;
   __asm__ volatile("int $0x21; sbb %0,%0" : "=r"(carry), "=a"(result), "=d"(device) :
@@ -76,7 +90,7 @@ int _rename_r(struct _reent *r, const char *old_name, const char *new_name) {
   int result, carry;
   __asm__ volatile("int $0x21; sbb %0,%0" : "=r"(carry), "=a"(result) :
     "Rah"((char)0x56), "d"(FP_OFF(old_name)), "Rds"(FP_SEG(old_name)),
-    "D"(FP_OFF(new_name)), "Res"(FP_SEG(new_name)) : "cc", "memory");
+    "D"(FP_OFF(new_name)), "e"(FP_SEG(new_name)) : "cc", "memory");
   if (carry) r->_errno = result;
   return carry ? -1 : 0;
 }

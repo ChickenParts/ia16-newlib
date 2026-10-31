@@ -591,13 +591,14 @@ __ia16_clang_fini:
 #endif
 
 /* Legacy lists may contain GCC-style zero and -1 sentinels.  User callbacks
-   obey the cdecl callee-save contract, including SI and DI used by the walk. */
+   obey the cdecl callee-save contract, including SI and DI used by the walk.
+   The lists are in DGROUP (SS); far-data callbacks may leave DS elsewhere. */
 .Lclang_walk_forward:
 #if defined(__IA16_CMODEL_IS_FAR_TEXT) || defined(__FAR_CODE__)
 	cmpw	%di, %si
 	je	.Lclang_walk_done
-	movw	(%si), %ax
-	movw	2(%si), %dx
+	movw	%ss:(%si), %ax
+	movw	%ss:2(%si), %dx
 	testw	%ax, %ax
 	jne	.Lclang_walk_forward_far_nonzero
 	testw	%dx, %dx
@@ -608,14 +609,14 @@ __ia16_clang_fini:
 	cmpw	$-1, %dx
 	je	.Lclang_walk_forward_far_skip
 .Lclang_walk_forward_far_call:
-	lcall	*(%si)
+	lcall	*%ss:(%si)
 .Lclang_walk_forward_far_skip:
 	addw	$4, %si
 	jmp	.Lclang_walk_forward
 #else
 	cmpw	%di, %si
 	je	.Lclang_walk_done
-	movw	(%si), %ax
+	movw	%ss:(%si), %ax
 	addw	$2, %si
 	testw	%ax, %ax
 	jz	.Lclang_walk_forward
@@ -629,8 +630,8 @@ __ia16_clang_fini:
 	cmpw	%di, %si
 	je	.Lclang_walk_done
 	subw	$4, %si
-	movw	(%si), %ax
-	movw	2(%si), %dx
+	movw	%ss:(%si), %ax
+	movw	%ss:2(%si), %dx
 	testw	%ax, %ax
 	jne	.Lclang_walk_reverse_far_nonzero
 	testw	%dx, %dx
@@ -641,13 +642,13 @@ __ia16_clang_fini:
 	cmpw	$-1, %dx
 	je	.Lclang_walk_reverse
 .Lclang_walk_reverse_far_call:
-	lcall	*(%si)
+	lcall	*%ss:(%si)
 	jmp	.Lclang_walk_reverse
 #else
 	cmpw	%di, %si
 	je	.Lclang_walk_done
 	subw	$2, %si
-	movw	(%si), %ax
+	movw	%ss:(%si), %ax
 	testw	%ax, %ax
 	jz	.Lclang_walk_reverse
 	cmpw	$-1, %ax

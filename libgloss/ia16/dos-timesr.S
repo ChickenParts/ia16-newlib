@@ -33,6 +33,11 @@
 	.section .text, "ax"
 
 .Lctor_timesr:
+#if defined(__clang__) && defined(__FAR_DATA__)
+	pushw %ds
+	pushw %ss
+	popw %ds
+#endif
 #ifdef __clang__
 	pushw	%bx
 #endif
@@ -52,6 +57,9 @@
 	popw	%es
 #ifdef __clang__
 	popw	%bx
+#endif
+#if defined(__clang__) && defined(__FAR_DATA__)
+	popw %ds
 #endif
 	RET_ (0)
 #else
@@ -93,10 +101,18 @@
 #ifdef __clang__
 	popw	%bx
 #endif
+#if defined(__clang__) && defined(__FAR_DATA__)
+	popw %ds
+#endif
 	RET_ (0)
 #endif
 
 .Ldtor_timesr:
+#if defined(__clang__) && defined(__FAR_DATA__)
+	pushw %ds
+	pushw %ss
+	popw %ds
+#endif
 #ifdef __clang__
 	pushw	%bx
 #endif
@@ -123,6 +139,9 @@
 #ifdef __clang__
 	popw	%bx
 #endif
+#if defined(__clang__) && defined(__FAR_DATA__)
+	popw %ds
+#endif
 	RET_ (0)
 #else
 	movw	$0x0204, %ax
@@ -141,6 +160,9 @@
 #ifdef __clang__
 	popw	%bx
 #endif
+#if defined(__clang__) && defined(__FAR_DATA__)
+	popw %ds
+#endif
 	RET_ (0)
 #endif
 
@@ -151,13 +173,13 @@ _times_r:
 	pushw %es
 	pushfw
 	cli
-	lesw FAR_ADJ__+6(%bx), %bx
-	movw .Luser_counter+2, %dx
-	movw .Luser_counter+4, %cx
+	lesw %ss:FAR_ADJ__+6(%bx), %bx
+	movw %ss:.Luser_counter+2, %dx
+	movw %ss:.Luser_counter+4, %cx
 	movw %dx, %es:0(%bx)
 	movw %cx, %es:2(%bx)
-	movw .Lsystem_counter+2, %ax
-	movw .Lsystem_counter+4, %cx
+	movw %ss:.Lsystem_counter+2, %ax
+	movw %ss:.Lsystem_counter+4, %cx
 	movw %ax, %es:4(%bx)
 	movw %cx, %es:6(%bx)
 	addw %dx, %ax

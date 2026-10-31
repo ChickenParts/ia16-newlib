@@ -33,7 +33,11 @@ getpid:
 	stc
 	int	$0x21
 	jnc	.eur_dos
+#ifdef __clang__
+	movw	%ss:_psp,	%ax
+#else
 	movw	_psp,	%ax
+#endif
 .eur_dos:
 	xorw	%dx,	%dx
 	RET_ (0)

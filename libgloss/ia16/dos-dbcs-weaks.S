@@ -29,7 +29,11 @@
 	 */
 	testw	%bp,	%bp
 	jnz	0f
+#ifdef __clang__
+	incb	%ss:.Ldos2
+#else
 	incb	.Ldos2
+#endif
 0:
 
 	TEXT_ (dos_dbcs_weaks.S.LIBGLOSS)
@@ -51,7 +55,11 @@ _dos_get_dbcs_lead_table:
 	pushw	%es
 	movw	$0x6300, %ax
 	movw	$-1,	%si
+#ifdef __clang__
+	testb	%ss:.Ldos2, %ah
+#else
 	testb	.Ldos2, %ah
+#endif
 	jnz	18f
 	int	$0x21
 11:
