@@ -3,6 +3,8 @@
    IA-16 SEG16 references. */
 ENTRY(_start)
 
+@MEMORY@
+
 SECTIONS
 {
   /* The MZ loader adds the load-module segment to SEG16 fields. Keep the code
@@ -15,7 +17,16 @@ SECTIONS
            ".msdos_initA!*" ".msdos_initA.*!" ".msdos_initB!*"
            ".msdos_initB.*!" ".preinit!*" ".preinit.*!" ".init!*"
            ".exitA!*" ".fini!*" ".exitB!*"))
-  }
+  } > metadata
+  .ia16_segelf_far_companions 0 (NOLOAD) : {
+    KEEP(*(".fartext!*" ".fartext.*!" ".fartext&*" ".fartext.*&"
+           ".farrodata!*" ".farrodata.*!" ".farrodata&*" ".farrodata.*&"
+           ".fardata!*" ".fardata.*!" ".fardata&*" ".fardata.*&"
+           ".farbss!*" ".farbss.*!" ".farbss&*" ".farbss.*&"))
+  } > metadata
+  .ia16_segelf_other 0 (NOLOAD) : { KEEP(*(".*!" ".*&")) } > metadata
+  CLASS(far_text) { *(.fartext .fartext.*) }
+  CLASS(far_data) { *(.farrodata .farrodata.* .fardata .fardata.* .farbss .farbss.*) }
   .text 0 :
   {
     __stext = .;
@@ -33,10 +44,10 @@ SECTIONS
     KEEP(*(.exitA))
     KEEP(*(.fini))
     KEEP(*(.exitB))
-    *(.text .text.* .fartext .fartext.* .init .fini)
+    *(.text .text.* .init .fini)
     INPUT_SECTION_FLAGS(SHF_ALLOC & SHF_EXECINSTR) *(*)
     __etext = .;
-  }
+  } > near_code
   .ia16_segelf_text_amp SIZEOF(.text) (NOLOAD) :
   {
     KEEP(*(".text&*" ".text.*&" ".fartext&*" ".fartext.*&"
@@ -45,11 +56,13 @@ SECTIONS
            ".msdos_initA&*" ".msdos_initA.*&" ".msdos_initB&*"
            ".msdos_initB.*&" ".preinit&*" ".preinit.*&" ".init&*"
            ".exitA&*" ".fini&*" ".exitB&*"))
-  }
+  } > metadata
   ASSERT(SIZEOF(.text) <= 0x10000,
          "Error: too large for the DOS code segment.")
 
-  .data 0 : AT(ALIGN(LOADADDR(.text) + SIZEOF(.text), 16))
+@FAR_CODE@
+@FAR_DATA@
+  .data 0 : AT(@DATA_LMA@)
   {
     __sdata = .;
 
@@ -74,17 +87,15 @@ SECTIONS
     __ia16_fini_array_end = .;
 
     *(.msdos_init_rodata .msdos_init_rodata.*)
-    *(.rodata .rodata.* .rodata1 .farrodata .farrodata.*)
+    *(.rodata .rodata.* .rodata1)
     *(.data .data.* .data1 .sdata .sdata.* .ldata .ldata.*)
-    *(.fardata .fardata.*)
     *(.gcc_except_table .gcc_except_table.*)
     *(.autofloat_stdio.*)
     __edata = .;
-  }
+  } > near_data
 
-  /* Near and far data pointers use the same DGROUP origin in this DOS
-     profile. Far pointers remain lossless; each resident segment is bounded
-     independently by the linker checks below. */
+  /* Near data and the resident stack use DGROUP in this DOS
+     profile. Far objects live in independently packed segments above. */
   __dgroup = LOADADDR(.data) - ADDR(.data);
   "__dgroup!" = __dgroup;
   .ia16_segelf_data_bang __dgroup (NOLOAD) :
@@ -95,7 +106,7 @@ SECTIONS
            ".dtors!*" ".dtors.*!" ".preinit_array!*"
            ".preinit_array.*!" ".init_array!*" ".init_array.*!"
            ".fini_array!*" ".fini_array.*!" ".gcc_except_table!*"))
-  }
+  } > metadata
 
   .bss ALIGN(ADDR(.data) + SIZEOF(.data), 2) (NOLOAD)
        : AT(__dgroup + ALIGN(ADDR(.data) + SIZEOF(.data), 2))
@@ -106,7 +117,7 @@ SECTIONS
     __ebss = .;
     __lbss = (__ebss - __sbss + 1) / 2;
     __heap_end_minimum = ALIGN(__ebss, 8);
-  }
+  } > near_data
 
   PROVIDE(__stack_size = 0x1000);
   .stack ALIGN(ADDR(.bss) + SIZEOF(.bss), 16) (NOLOAD)
@@ -115,7 +126,7 @@ SECTIONS
     __stack_start = .;
     . += __stack_size;
     __stack_end = .;
-  }
+  } > near_data
   ASSERT(__stack_end <= 0x10000,
          "Error: DOS DGROUP plus stack exceeds 64KB.")
   _end = __stack_end;

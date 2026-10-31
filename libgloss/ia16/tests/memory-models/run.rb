@@ -12,24 +12,26 @@ require 'shellwords'
 MODELS = %w[tiny small medium compact large].freeze
 ROOT = Pathname(__dir__).realpath
 
-options = { models: MODELS, emulator: 'dosbox' }
+options = { models: MODELS, emulator: 'dosbox', lto: 'native' }
 OptionParser.new do |parser|
   parser.banner = 'Usage: run.rb --profile PATH --out DIR [--emulator PATH]'
   parser.on('--profile PATH', 'Generated profile.sh from build-clang-sysroot.rb') { |value| options[:profile] = value }
   parser.on('--out DIR', 'Fresh acceptance output directory') { |value| options[:out] = value }
   parser.on('--models LIST', 'Comma-separated memory model list') { |value| options[:models] = value.split(',') }
+  parser.on('--trace', 'Print guest diagnostic stages') { options[:trace] = true }
+  parser.on('--lto MODE', %w[native full thin], 'native, full, or thin') { |value| options[:lto] = value }
   parser.on('--emulator PATH') { |value| options[:emulator] = value }
 end.parse!
-abort 'missing required option: --profile PATH' unless options[:profile]
-abort 'missing required option: --out DIR' unless options[:out]
+  abort 'missing required option: --profile PATH' unless options[:profile]
+  abort 'missing required option: --out DIR' unless options[:out]
 options[:models] = options[:models].map(&:strip)
-abort "unsupported model in #{options[:models].inspect}" unless (options[:models] - MODELS).empty?
-abort 'select at least one model' if options[:models].empty?
+  abort "unsupported model in #{options[:models].inspect}" unless (options[:models] - MODELS).empty?
+  abort 'select at least one model' if options[:models].empty?
 
 profile = Pathname(options[:profile]).realpath
 out = Pathname(options[:out]).expand_path
-abort "output directory already contains files: #{out}" if out.exist? && !out.children.empty?
-abort 'acceptance paths may not contain spaces' if [profile, out].any? { |path| path.to_s.match?(/\s/) }
+  abort "output directory already contains files: #{out}" if out.exist? && !out.children.empty?
+  abort 'acceptance paths may not contain spaces' if [profile, out].any? { |path| path.to_s.match?(/\s/) }
 
 resolve_executable = lambda do |name|
   candidates = name.include?(File::SEPARATOR) ? [name] :
@@ -37,44 +39,11 @@ resolve_executable = lambda do |name|
   candidate = candidates.find { |path| File.file?(path) && File.executable?(path) }
   abort "executable not found: #{name}" unless candidate
   Pathname(candidate).realpath
-end
+  end
 
 emulator = resolve_executable.call(options[:emulator])
 out.mkpath
-fixture = <<~'C'
-  #include <unistd.h>
-
-  static volatile unsigned int callback_state;
-  static volatile unsigned int *volatile state_pointer = &callback_state;
-
-  static int add_three(int value) { return value + 3; }
-  static int (*volatile callback)(int) = add_three;
-
-  __attribute__((constructor(101))) static void first_constructor(void) {
-    callback_state = 1;
-  }
-
-  __attribute__((constructor(202))) static void second_constructor(void) {
-    callback_state = callback_state * 2 + 1;
-  }
-
-  int main(void) {
-    if (*state_pointer == 3 && callback(39) == 42)
-      *state_pointer = 276;
-    else
-      *state_pointer = 0;
-    return 0;
-  }
-
-  __attribute__((destructor(101))) static void write_result(void) {
-    static const char pass[] = "PASS 276 42\n";
-    static const char fail[] = "FAIL\n";
-    if (*state_pointer == 276 && callback(39) == 42)
-      (void)write(1, pass, sizeof(pass) - 1);
-    else
-      (void)write(1, fail, sizeof(fail) - 1);
-  }
-C
+fixture = (ROOT / 'fixtures/runtime.c').read
 fixture_sha256 = Digest::SHA256.hexdigest(fixture)
 results = {}
 
@@ -87,14 +56,29 @@ options[:models].each do |model|
   driver_image = lane / (model == 'tiny' ? 'DRIVER.COM' : 'DRIVER.EXE')
   direct_image = lane / (model == 'tiny' ? 'DIRECT.COM' : 'DIRECT.EXE')
   shell_prefix = ". #{Shellwords.escape(profile.to_s)} && "
-  compile = "ia16_clang_#{model} -c #{Shellwords.escape(source.to_s)} -o #{Shellwords.escape(object.to_s)}"
-  driver_link = "ia16_link_#{model} #{Shellwords.escape(object.to_s)} -o #{Shellwords.escape(driver_image.to_s)}"
-  direct_link = "ia16_direct_link_#{model} #{Shellwords.escape(object.to_s)} -o #{Shellwords.escape(direct_image.to_s)}"
+  lto = options[:lto] == 'native' ? '' : "-flto=#{options[:lto]}"
+  far_code = %w[medium large].include?(model)
+  far_data = %w[compact large].include?(model)
+  macros = "#{options[:trace] ? '-DTEST_TRACE' : ''} -DTEST_FAR_CODE=#{far_code ? 1 : 0} -DTEST_FAR_DATA=#{far_data ? 1 : 0}"
+  compile = "ia16_clang_#{model} #{lto} #{macros} -ffunction-sections -fdata-sections -c #{Shellwords.escape(source.to_s)} -o #{Shellwords.escape(object.to_s)}"
+  driver_link = "ia16_link_#{model} #{lto} -Wl,--gc-sections -Wl,-Map,#{lane}/driver.map #{Shellwords.escape(object.to_s)} -o #{Shellwords.escape(driver_image.to_s)}"
+  direct_link = "ia16_direct_link_#{model} --gc-sections --Map=#{lane}/direct.map #{Shellwords.escape(object.to_s)} -o #{Shellwords.escape(direct_image.to_s)}"
   compile_out, compile_error, compile_status = Open3.capture3('bash', '-e', '-c',
     "#{shell_prefix}#{compile} && #{driver_link} && #{direct_link}")
   unless compile_status.success?
     abort "#{model}: compile/link failed\n#{compile_out}\n#{compile_error}"
   end
+
+  images = [driver_image, direct_image]
+  abort "#{model}: empty executable" if images.any? { |path| path.size.zero? }
+  sections = (lane / 'driver.map').read.lines.filter_map do |line|
+    match = line.match(/^\s*[0-9a-f]+\s+[0-9a-f]+\s+([0-9a-f]+)\s+\d+\s+(\.\S+)\s*$/)
+    match && [match[2], match[1].to_i(16)]
+  end
+  code_bytes = sections.sum { |name, size| name.match?(/\A\.(?:text|fartext)(?:\.|\z)/) ? size : 0 }
+  data_bytes = sections.sum { |name, size| name.match?(/\A\.fardata(?:\.|\z)/) ? size : 0 }
+  abort "#{model}: far-code fixture did not exceed 64KB: #{code_bytes}" if far_code && code_bytes <= 65_536
+  abort "#{model}: far-data fixture did not exceed 64KB: #{data_bytes}" if far_data && data_bytes <= 65_536
 
   guest_drive = lane / 'drive'
   guest_drive.mkpath
@@ -102,9 +86,10 @@ options[:models].each do |model|
   FileUtils.cp(direct_image, guest_drive / direct_image.basename)
   batch = <<~BAT.gsub("\n", "\r\n")
     @echo off
-    #{driver_image.basename} > DRIVER.TXT
+    set I276=runtime
+    #{driver_image.basename} alpha "two words" > DRIVER.TXT
     if errorlevel 1 goto fail
-    #{direct_image.basename} > DIRECT.TXT
+    #{direct_image.basename} alpha "two words" > DIRECT.TXT
     if errorlevel 1 goto fail
     echo DONE> DONE.TXT
     goto end
@@ -174,12 +159,13 @@ options[:models].each do |model|
       [name, path.file? ? path.read.strip : nil]
     end
     complete = (guest_drive / 'DONE.TXT').file? &&
-      result_files.values.all? { |value| value == 'PASS 276 42' } && !(guest_drive / 'FAIL.TXT').exist?
+      result_files.values.all? { |value| value == 'PASS 276 42' || (options[:trace] && value&.end_with?('PASS 276 42')) } && !(guest_drive / 'FAIL.TXT').exist?
     results[model] = {
       'status' => complete ? 'pass' : 'fail', 'image' => model == 'tiny' ? 'COM' : 'MZ',
       'driver_link_sha256' => Digest::SHA256.file(driver_image).hexdigest,
       'direct_link_sha256' => Digest::SHA256.file(direct_image).hexdigest,
-      'fixture_sha256' => fixture_sha256, 'guest_receipts' => result_files,
+      'fixture_sha256' => fixture_sha256, 'lto' => options[:lto],
+      'code_bytes' => code_bytes, 'far_data_bytes' => data_bytes, 'guest_receipts' => result_files,
       'guest_done' => (guest_drive / 'DONE.TXT').file?, 'emulated_cpu' => '386',
       'emulator_exit' => guest_status.exitstatus, 'emulator_signal' => guest_status.termsig,
       'stopped_after_guest_receipt' => stopped_after_receipt,
@@ -190,7 +176,7 @@ options[:models].each do |model|
     puts "#{model}: #{complete ? 'PASS' : 'FAIL'}; driver=#{result_files['DRIVER.TXT'].inspect}; direct=#{result_files['DIRECT.TXT'].inspect}"
     abort "#{model}: guest acceptance failed; inspect #{guest_log} and #{lane / 'result.json'}" unless complete
   end
-end
+  end
 
 File.write(out / 'results.json', JSON.pretty_generate({
   'status' => 'pass', 'models' => results, 'profile_sha256' => Digest::SHA256.file(profile).hexdigest,

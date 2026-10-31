@@ -1,3 +1,4 @@
+#if !defined(__clang__) || !defined(__FAR_DATA__)
 #include "call-cvt.h"
 
 	.arch i8086,jumps
@@ -76,4 +77,6 @@ _write_r:
 	popw	%bx
 	xchgw	%ax,	%cx
 	RET_(8)
+#endif
+
 #endif

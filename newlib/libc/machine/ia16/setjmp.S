@@ -19,6 +19,75 @@
 	.code16
 	.att_syntax prefix
 
+#if defined(__clang__) && defined(__FAR_DATA__)
+#define JMP_DS (20 + FAR_ADJ__)
+#define JMP_SS (22 + FAR_ADJ__)
+	TEXT_ (setjmp.S.NEWLIB)
+	.global setjmp
+setjmp:
+	pushw %bx
+	pushw %bp
+	movw %sp, %bp
+	pushw %es
+	lesw FAR_ADJ__+6(%bp), %bx
+	movw %ax, %es:0(%bx)
+	movw 2(%bp), %ax
+	movw %ax, %es:2(%bx)
+	movw %cx, %es:4(%bx)
+	movw %dx, %es:6(%bx)
+	movw %si, %es:8(%bx)
+	movw %di, %es:10(%bx)
+	movw 0(%bp), %ax
+	movw %ax, %es:12(%bx)
+	leaw FAR_ADJ__+6(%bp), %ax
+	movw %ax, %es:14(%bx)
+	movw -2(%bp), %ax
+	movw %ax, %es:16(%bx)
+	movw 4(%bp), %ax
+	movw %ax, %es:18(%bx)
+#if defined(__FAR_CODE__)
+	movw 6(%bp), %ax
+	movw %ax, %es:20(%bx)
+#endif
+	movw %ds, %ax
+	movw %ax, %es:JMP_DS(%bx)
+	movw %ss, %ax
+	movw %ax, %es:JMP_SS(%bx)
+	xorw %ax, %ax
+	popw %es
+	popw %bp
+	popw %bx
+	RET_(4)
+
+	.global longjmp
+longjmp:
+	movw %sp, %bp
+	movw FAR_ADJ__+6(%bp), %ax
+	ldsw FAR_ADJ__+2(%bp), %bx
+	cmpw $1, %ax
+	adcw $0, %ax
+	movw %ax, 0(%bx)
+	movw JMP_SS(%bx), %ax
+	movw %ax, %ss
+	movw 14(%bx), %sp
+#if defined(__FAR_CODE__)
+	pushw 20(%bx)
+#endif
+	pushw 18(%bx)
+	pushw JMP_DS(%bx)
+	movw 16(%bx), %ax
+	movw %ax, %es
+	movw 12(%bx), %bp
+	movw 10(%bx), %di
+	movw 8(%bx), %si
+	movw 6(%bx), %dx
+	movw 4(%bx), %cx
+	movw 0(%bx), %ax
+	movw 2(%bx), %bx
+	popw %ds
+	RET_(4)
+#else
+
 #ifdef __ELKS__
 	.text
 	.global		_setjmp
@@ -111,3 +180,5 @@ longjmp:
 	cmpw	$1,	%ax
 	adcw	$0,	%ax
 	RET_(2)
+
+#endif

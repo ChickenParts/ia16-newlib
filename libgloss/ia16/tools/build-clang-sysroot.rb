@@ -8,6 +8,7 @@ require 'open3'
 require 'optparse'
 require 'pathname'
 require 'shellwords'
+require_relative 'generate-dos-clang-mz'
 
 module IA16ClangSysroot
   TARGET = 'ia16-pc-msdos'.freeze
@@ -25,7 +26,7 @@ module IA16ClangSysroot
   }.transform_values(&:freeze).freeze
 
   DOS_COMMON_OBJECTS = %w[
-    dos-emutls dos-access dos-chdir dos-chmod dos-closer dos-cvt-file-time dos-dbcs
+    dos-emutls dos-far-data-syscalls dos-access dos-chdir dos-chmod dos-closer dos-cvt-file-time dos-dbcs
     dos-dbcs-strcspn dos-dup dos-dup2 dos-environ dos-argv dos-kill dos-fstatr dos-getcwd
     dos-getcwd-impl dos-gettimeofdayr dos-heaplen dos-isattyr dos-lseekr dos-mkdir
     dos-mkdirr dos-near-data-segment dos-openr dos-psp dos-readr dos-realpath
@@ -165,6 +166,14 @@ module IA16ClangSysroot
       stage_headers(model, newlib_build, sysroot)
       variables = MakeVariables.new((newlib_build / 'Makefile').read)
       libc_sources = source_files(variables.words('libc_a_SOURCES'), 'newlib')
+      # Generic string C providers honor every data/code pointer ABI. The
+      # historical IA-16 assembly strings have near-data signatures; including
+      # both gives duplicate strong symbols and archive-order-dependent ABI.
+      libc_sources.reject! do |source|
+        relative = source.relative_path_from(@source / 'newlib').to_s
+        (relative.start_with?('libc/machine/ia16/') && source.extname == '.S' &&
+          source.basename.to_s != 'setjmp.S') || relative == 'libc/stdlib/environ.c'
+      end
       libm_sources = source_files(variables.words('libm_a_SOURCES'), 'newlib')
       raise "#{model}: configured Newlib source list is empty" if libc_sources.empty? || libm_sources.empty?
       @manifest['models'][model.to_s]['newlib_sources'] = {
@@ -213,8 +222,10 @@ module IA16ClangSysroot
       File.open(log, 'w') do |stream|
         stream.puts("$ #{Shellwords.join(command)}")
         stream.flush
-        _stdout, _stderr, status = Open3.capture3(env, *command, chdir: cwd.to_s,
+        stdout, stderr, status = Open3.capture3(env, *command, chdir: cwd.to_s,
                                                   out: stream, err: [:child, :out])
+        stream.write(stdout)
+        stream.write(stderr)
         item['exit'] = status.exitstatus
         save_manifest
         raise "#{model} #{name} failed with status #{status.exitstatus}; see #{log}" unless status.success?
@@ -345,16 +356,17 @@ module IA16ClangSysroot
       lines = [
         'ninja_required_version = 1.3', "cc = #{ninja_quote(@clang)}",
         "ar = #{ninja_quote(find_tool('ar'))}", "ranlib = #{ninja_quote(find_tool('ranlib'))}",
-        'rule cc', '  command = $cc $flags -c $in -o $out', '  description = CC $out',
-        'rule archive', '  command = $ar rcs $out $in && $ranlib $out', '  description = AR $out'
+        'rule cc', '  command = $cc $flags -MMD -MF $out.d -c $in -o $out',
+        '  depfile = $out.d', '  deps = gcc', '  description = CC $out',
+        'rule archive', '  command = rm -f $out && $ar rcs $out $in && $ranlib $out', '  description = AR $out'
       ]
       (libc_objects + libm_objects + dos_objects + [startup]).each do |object|
         source, flags = @object_commands.fetch(object)
-        lines << "build #{ninja_quote(object)}: cc #{ninja_quote(source)}"
+        lines << "build #{ninja_quote(object)}: cc #{ninja_quote(source)} | #{ninja_quote(@clang)}"
         lines << "  flags = #{command_fragment(flags)}"
       end
       lines << "build #{ninja_quote(libm_archive)}: archive #{libm_objects.map { |o| ninja_quote(o) }.join(' ')}"
-      lines << "build #{ninja_quote(libc_archive)}: archive #{(libc_objects + libm_objects).map { |o| ninja_quote(o) }.join(' ')}"
+      lines << "build #{ninja_quote(libc_archive)}: archive #{libc_objects.map { |o| ninja_quote(o) }.join(' ')}"
       lines << "build #{ninja_quote(dos_archive)}: archive #{dos_objects.map { |o| ninja_quote(o) }.join(' ')}"
       lines << "build all: phony #{ninja_quote(libc_archive)} #{ninja_quote(libm_archive)} #{ninja_quote(dos_archive)} #{ninja_quote(startup)}"
       lines << 'default all'
@@ -375,7 +387,8 @@ module IA16ClangSysroot
         script, stderr, status = Open3.capture3(*args.map(&:to_s))
         raise "#{model} linker script generation failed: #{stderr}" unless status.success?
       else
-        script = File.read(@source / 'libgloss/ia16' / config.fetch(:template))
+        script = IA16ClangSysroot.dos_clang_mz_script(
+          File.read(@source / 'libgloss/ia16' / config.fetch(:template)))
       end
       File.write(lib_dir / config.fetch(:linker_script), script)
       write_profiles

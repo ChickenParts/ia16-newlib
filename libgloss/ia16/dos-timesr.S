@@ -146,6 +146,32 @@
 
 	.global	_times_r
 _times_r:
+#if defined(__clang__) && defined(__FAR_DATA__)
+	ENTER_BX_(8)
+	pushw %es
+	pushfw
+	cli
+	lesw FAR_ADJ__+6(%bx), %bx
+	movw .Luser_counter+2, %dx
+	movw .Luser_counter+4, %cx
+	movw %dx, %es:0(%bx)
+	movw %cx, %es:2(%bx)
+	movw .Lsystem_counter+2, %ax
+	movw .Lsystem_counter+4, %cx
+	movw %ax, %es:4(%bx)
+	movw %cx, %es:6(%bx)
+	addw %dx, %ax
+	movw %cx, %dx
+	adcw %es:2(%bx), %dx
+	xorw %cx, %cx
+	movw %cx, %es:8(%bx)
+	movw %cx, %es:10(%bx)
+	movw %cx, %es:12(%bx)
+	movw %cx, %es:14(%bx)
+	popfw
+	popw %es
+	RET_(8)
+#else
 	ENTER_BX_(4)
 	MOV_ARG2W_BX_(%bx)
 #ifndef __IA16_FEATURE_DOSX
@@ -184,6 +210,7 @@ _times_r:
 	movw	6(%bx),	%dx
 	adcw	2(%bx),	%dx
 	RET_(4)
+#endif
 
 	.section .data, "aw"
 
@@ -235,12 +262,12 @@ _times_r:
 
 	.balign	2
 
-	.section .ctors.65535
+	.section .ctors.65535, "aw", @progbits
 
 	.balign	2
 	TEXT_PTR_ (.Lctor_timesr)
 
-	.section .dtors.65535
+	.section .dtors.65535, "aw", @progbits
 
 	.balign	2
 	TEXT_PTR_ (.Ldtor_timesr)
@@ -248,11 +275,10 @@ _times_r:
 	.lcomm	.Lp_orig_int_0x1c, 4
 	.lcomm	.Lp_indos, 4
 
-#if defined(__clang__) && !defined(__IA16_FEATURE_DOSX) \
-    && !defined(__IA16_CMODEL_IS_FAR_TEXT) && !defined(__FAR_CODE__)
+#if defined(__clang__) && !defined(__IA16_FEATURE_DOSX)
 	/* _exit bypasses application atexit handlers, but DOS does not restore
 	   INT 1Ch.  Release our runtime-owned hook on every process termination.
 	   Normal exit already ran the dtor; its vector check makes this a no-op. */
 	.section .fini, "ax"
-	callw	.Ldtor_timesr
+	CALL_(.Ldtor_timesr)
 #endif

@@ -1,3 +1,4 @@
+#if !defined(__clang__) || !defined(__FAR_DATA__)
 #include "call-cvt.h"
 
 	.arch i8086,jumps
@@ -29,3 +30,5 @@ _lseek_r:
 	cwd
 .noerror:
 	RET2_(10)
+
+#endif

@@ -26,4 +26,9 @@
 
 	movw	%ax,	__argv
 
-	.comm	__argv, 2
+#if defined(__clang__) && defined(__FAR_DATA__)
+	movw %ss, __argv+2
+	.comm __argv, 4
+#else
+	.comm __argv, 2
+#endif

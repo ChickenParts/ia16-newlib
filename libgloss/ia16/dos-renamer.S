@@ -1,3 +1,4 @@
+#if !defined(__clang__) || !defined(__FAR_DATA__)
 #include "call-cvt.h"
 
 	.arch i8086,jumps
@@ -28,3 +29,5 @@ _rename_r:
 	popw	%di
 	popw	%es
 	RET_(6)
+
+#endif

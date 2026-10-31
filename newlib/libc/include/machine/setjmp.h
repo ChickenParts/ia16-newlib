@@ -6,9 +6,17 @@ _BEGIN_STD_C
    Keep this layout synchronized with libc/machine/ia16/setjmp.S. */
 #define _JBTYPE unsigned short
 #if defined(__IA16_CMODEL_IS_FAR_TEXT) || defined(__FAR_CODE__)
+#if defined(__clang__) && defined(__FAR_DATA__)
+#define _JBLEN 13
+#else
 #define _JBLEN 11
+#endif
+#else
+#if defined(__clang__) && defined(__FAR_DATA__)
+#define _JBLEN 12
 #else
 #define _JBLEN 10
+#endif
 #endif
 #endif
 

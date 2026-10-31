@@ -25,4 +25,9 @@
 
 	movw	%bp,	environ
 
-	.comm	environ, 2
+#if defined(__clang__) && defined(__FAR_DATA__)
+	movw %ss, environ+2
+	.comm environ, 4
+#else
+	.comm environ, 2
+#endif

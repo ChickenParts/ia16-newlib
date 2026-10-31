@@ -316,7 +316,42 @@ __stext_nokeep_to_copy:
 	decw	%bx
 	loop	.Ldo_reverse
 .Lno_reverse:
-#ifndef __IA16_CALLCVT_REGPARMCALL
+#if defined(__clang__) && defined(__FAR_DATA__)
+	/* Parse near SS offsets first, then form the far-pointer C arrays. */
+	movw %sp, %di
+	movw %bp, %si
+	xorw %ax, %ax
+	pushw %ax
+	pushw %ax
+.Lfar_env:
+	lodsw
+	testw %ax, %ax
+	jz .Lfar_env_done
+	pushw %ss
+	pushw %ax
+	jmp .Lfar_env
+.Lfar_env_done:
+	movw %sp, %bp
+	xorw %ax, %ax
+	pushw %ax
+	pushw %ax
+	movw %dx, %cx
+	movw %dx, %si
+	shlw $1, %si
+	addw %di, %si
+.Lfar_argv:
+	subw $2, %si
+	movw (%si), %ax
+	pushw %ss
+	pushw %ax
+	loop .Lfar_argv
+	movw %sp, %ax
+	pushw %ss
+	pushw %bp
+	pushw %ss
+	pushw %ax
+	pushw %dx
+#elif !defined(__IA16_CALLCVT_REGPARMCALL)
 	movw	%sp,	%ax
 	pushw	%bp		# envp
 	pushw	%ax		# argv
@@ -340,7 +375,11 @@ __stext_nokeep_to_copy:
 #endif
 	CALL_ (main)
 #if defined __IA16_CALLCVT_CDECL
+# if defined(__clang__) && defined(__FAR_DATA__)
+	addw	$10,	%sp
+# else
 	addw	$6,	%sp
+# endif
 #elif defined __IA16_CALLCVT_STDCALL
 	# We do not know whether main (...) pops no arguments, two
 	# arguments (argc, argv), or three arguments (argc, argv, envp).  So
