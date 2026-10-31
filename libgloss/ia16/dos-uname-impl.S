@@ -108,6 +108,7 @@ __ia16_get_hw_cpu:
 #endif
 	RET_ (0)
 
+#ifndef __clang__
 	.section .text
 
 	.global __msdos_get_kern_ver_str
@@ -164,3 +165,5 @@ __msdos_get_kern_ver_str:
 .error:
 	movw	$-1,	%ax
 	jmp	.done
+
+#endif
