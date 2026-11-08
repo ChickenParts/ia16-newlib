@@ -30,6 +30,120 @@ class IA16SegmentPackingTest < Minitest::Test
       'input.o', '-o', 'output.exe', '--Map=output.map')
     File.read(File.join(@dir, 'output.map'))
   end
+  def test_medium_bss_alignment_after_four_byte_data
+   File.write(File.join(@dir, 'input.c'), <<~'C')
+     volatile unsigned short word[2] = {1, 2};
+     volatile unsigned long datum __attribute__((aligned(4)));
+     int _start(void) { datum = word[0] + word[1]; return (int)datum; }
+   C
+   run_command(TOOLS / 'clang', '--target=ia16-pc-msdos', '-march=8086',
+     '-mmemory-model=medium', '-ffreestanding', '-fno-common', '-c', 'input.c', '-o', 'input.o')
+   _, stderr = run_command(TOOLS / 'ld.lld', '-m', 'elf_ia16', '--oformat=mz',
+     '-T', 'dos.ld', 'input.o', '-o', 'output.exe', '--Map=output.map')
+   refute_match(/alignment/, stderr, 'medium BSS must not trigger an alignment warning')
+   map = File.read(File.join(@dir, 'output.map'))
+   line = map.lines.find { |entry| entry.match?(/\sdatum$/) }
+   refute_nil line, 'medium: missing datum'
+   vma, lma = line.split.first(2).map { |value| value.to_i(16) }
+   assert_equal 0, vma % 4, 'datum VMA'
+   assert_equal 0, lma % 4, 'datum LMA'
+  end
+def test_far_data_models_align_near_bss_and_common_in_dgroup
+  %w[compact large].each do |model|
+    [4, 8, 16].each do |alignment|
+      File.write(File.join(@dir, 'input.c'), <<~'C')
+        volatile unsigned short word[2] = {1, 2};
+        int _start(void) { return word[0] + word[1]; }
+      C
+      File.write(File.join(@dir, 'near.s'), <<~ASM)
+        .section .bss.near_alignment,"aw",@nobits
+        .balign #{alignment}
+        .globl near_bss
+      near_bss:
+        .space 4
+        .comm near_common,4,#{alignment}
+      ASM
+      run_command(TOOLS / 'clang', '--target=ia16-pc-msdos', '-march=8086',
+        "-mmemory-model=#{model}", '-ffreestanding', '-c', 'input.c', '-o', 'input.o')
+      run_command(TOOLS / 'clang', '--target=ia16-pc-msdos', '-march=8086',
+        "-mmemory-model=#{model}", '-c', 'near.s', '-o', 'near.o')
+      symbols, = run_command(TOOLS / 'llvm-nm', '--defined-only', 'near.o')
+      assert_match(/^\h+ B near_bss$/, symbols)
+      assert_match(/^\h+ C near_common$/, symbols)
+      _, stderr = run_command(TOOLS / 'ld.lld', '-m', 'elf_ia16', '--oformat=mz',
+        '-T', 'dos.ld', 'input.o', 'near.o', '-o', 'output.exe', '--Map=output.map')
+      refute_match(/alignment/, stderr, "#{model}/#{alignment}: linker warning")
+      map = File.read(File.join(@dir, 'output.map'))
+      section = lambda do |name|
+        line = map.lines.find { |entry| entry.match?(/\s#{Regexp.escape(name)}\s*$/) }
+        refute_nil line, "#{model}: missing #{name}"
+        line.split.first(3).map { |value| value.to_i(16) }
+      end
+      data, bss = %w[.data .bss].map { |name| section.call(name) }
+      %w[near_bss near_common].each do |name|
+        line = map.lines.find { |entry| entry.match?(/\s#{name}$/) }
+        refute_nil line, "#{model}: missing #{name}"
+        vma, lma = line.split.first(2).map { |value| value.to_i(16) }
+        assert_operator vma, :>=, bss[0], "#{model}: #{name} below DGROUP BSS"
+        assert_operator vma + 4, :<=, bss[0] + bss[2], "#{model}: #{name} outside DGROUP BSS"
+        assert_equal 0, vma % alignment, "#{model}: #{name} VMA"
+        assert_equal data[1] + vma - data[0], lma, "#{model}: #{name} DGROUP LMA"
+        assert_equal 0, lma % alignment, "#{model}: #{name} LMA"
+      end
+    end
+  end
+end
+  def test_static_objects_respect_requested_alignment
+    %w[tiny small medium compact large].each do |model|
+      [4, 8, 16].product([false, true]).each do |alignment, common|
+        script = if model == 'tiny'
+          stdout, = run_command('sh', IA16 / 'dos-mt.ld.in', '-nostdlib', '-mclang-runtime')
+          stdout
+        else
+          IA16ClangSysroot.dos_clang_mz_script((IA16 / 'dos-clang-mz.ld.in').read)
+        end
+        File.write(File.join(@dir, 'dos.ld'), script)
+        File.write(File.join(@dir, 'input.c'), <<~C)
+          volatile unsigned short word[2] = {1, 2};
+          volatile unsigned long initialized __attribute__((aligned(#{alignment}))) = 3;
+          volatile unsigned long datum __attribute__((aligned(#{alignment})));
+          int _start(void) { datum = word[0] + word[1] + initialized; return (int)datum; }
+        C
+        run_command(TOOLS / 'clang', '--target=ia16-pc-msdos', '-march=8086',
+          "-mmemory-model=#{model}", '-ffreestanding',
+          (common ? '-fcommon' : '-fno-common'), '-c', 'input.c', '-o', 'input.o')
+        if common
+          symbols, = run_command(TOOLS / 'llvm-nm', '--defined-only', 'input.o')
+          assert_match(/^\h+ C datum$/, symbols, "#{model}: fixture must emit COMMON")
+        end
+        format = model == 'tiny' ? 'binary' : 'mz'
+        _, stderr = run_command(TOOLS / 'ld.lld', '-m', 'elf_ia16', "--oformat=#{format}",
+          '-T', 'dos.ld', 'input.o', '-o', 'output.exe', '--Map=output.map')
+        refute_match(/alignment/, stderr, "#{model}/#{alignment}: linker warning")
+        map = File.read(File.join(@dir, 'output.map'))
+        %w[initialized datum].each do |name|
+          line = map.lines.find { |entry| entry.match?(/\s#{name}$/) }
+          refute_nil line, "#{model}/#{alignment}: missing #{name}"
+          vma, lma = line.split.first(2).map { |value| value.to_i(16) }
+          assert_equal 0, vma % alignment, "#{model}/#{alignment}: #{name} VMA"
+          assert_equal 0, lma % alignment, "#{model}/#{alignment}: #{name} LMA"
+        end
+        unless model == 'tiny'
+          section = lambda do |name|
+            line = map.lines.find { |entry| entry.match?(/\s#{Regexp.escape(name)}\s*$/) }
+            refute_nil line, "#{model}: missing #{name}"
+            line.split.first(3).map { |value| value.to_i(16) }
+          end
+          data, bss, stack = %w[.data .bss .stack].map { |name| section.call(name) }
+          assert_operator bss[0], :>=, data[0] + data[2], model
+          assert_equal data[1] + bss[0], bss[1], "#{model}: BSS load offset"
+          assert_operator stack[0], :>=, bss[0] + bss[2], model
+          assert_equal 0, stack[0] % 16, model
+          assert_operator stack[0] + stack[2], :<=, 0x10000, model
+        end
+      end
+    end
+  end
   def test_multiple_far_functions_spill_without_per_function_build_flags
     %w[medium large].each do |model|
       map = build(model, <<~'C')

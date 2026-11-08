@@ -32,6 +32,68 @@ static int passed;
 static jmp_buf saved_jump;
 static jmp_buf *active_jump;
 static volatile float math_input = 81.0f;
+/* The neighbors catch misplaced initialization or BSS clearing as well as
+   checking that the aligned member itself remains intact. */
+#define DEFINE_ALIGNMENT_CASE(n)                                               \
+  struct aligned_case_##n {                                                   \
+    unsigned char before;                                                     \
+    unsigned char bytes[3] __attribute__((aligned(n)));                       \
+    unsigned char after;                                                      \
+  };                                                                          \
+  static volatile struct aligned_case_##n aligned_init_##n = {                 \
+      0x31, {0x42, 0x53, 0x64}, 0x75};                                        \
+  static volatile struct aligned_case_##n aligned_zero_##n
+DEFINE_ALIGNMENT_CASE(4);
+DEFINE_ALIGNMENT_CASE(8);
+DEFINE_ALIGNMENT_CASE(16);
+#if TEST_FAR_DATA
+/* Explicit near storage exercises DGROUP even in the far-data models. */
+static __near volatile struct aligned_case_4 near_zero_4;
+static __near volatile struct aligned_case_8 near_zero_8;
+static __near volatile struct aligned_case_16 near_zero_16;
+#endif
+
+/* A volatile round trip prevents folding this into an assumption about the
+   declared alignment. Packed far pointers put the offset in the low word;
+   a real-mode segment contributes a multiple of 16 to the physical address. */
+#define ALIGNED_ADDRESS(p, n)                                                 \
+  (alignment_address = (unsigned long)(p), !(alignment_address & ((n) - 1)))
+#define CHECK_ZERO_CASE(obj, n)                                                \
+  do {                                                                        \
+    if (!ALIGNED_ADDRESS((obj).bytes, n) || (obj).before || (obj).bytes[0] || \
+        (obj).bytes[1] || (obj).bytes[2] || (obj).after)                       \
+      return 0;                                                               \
+    (obj).before = 0x19;                                                      \
+    (obj).bytes[0] = 0x2a;                                                    \
+    (obj).bytes[1] = 0x3b;                                                    \
+    (obj).bytes[2] = 0x4c;                                                    \
+    (obj).after = 0x5d;                                                       \
+    if ((obj).before != 0x19 || (obj).bytes[0] != 0x2a ||                     \
+        (obj).bytes[1] != 0x3b || (obj).bytes[2] != 0x4c ||                   \
+        (obj).after != 0x5d)                                                  \
+      return 0;                                                               \
+  } while (0)
+#define CHECK_INIT_CASE(n)                                                    \
+  do {                                                                        \
+    if (!ALIGNED_ADDRESS(aligned_init_##n.bytes, n) ||                         \
+        aligned_init_##n.before != 0x31 || aligned_init_##n.bytes[0] != 0x42 ||\
+        aligned_init_##n.bytes[1] != 0x53 ||                                  \
+        aligned_init_##n.bytes[2] != 0x64 || aligned_init_##n.after != 0x75)  \
+      return 0;                                                               \
+    CHECK_ZERO_CASE(aligned_zero_##n, n);                                      \
+  } while (0)
+static int check_static_alignment(void) {
+  volatile unsigned long alignment_address;
+  CHECK_INIT_CASE(4);
+  CHECK_INIT_CASE(8);
+  CHECK_INIT_CASE(16);
+#if TEST_FAR_DATA
+  CHECK_ZERO_CASE(near_zero_4, 4);
+  CHECK_ZERO_CASE(near_zero_8, 8);
+  CHECK_ZERO_CASE(near_zero_16, 16);
+#endif
+  return 1;
+}
 extern char **environ;
 extern char **__argv;
 #if TEST_FAR_CODE
@@ -175,6 +237,8 @@ static int check_allocations(void) {
 }
 int main(int argc, char **argv, char **envp) {
   TRACE('M');
+  if (!check_static_alignment())
+    return 23;
   if (argc != 3 || !argv[0] || !argv[0][0] || argv[3] ||
       strcmp(argv[1], "alpha") || strcmp(argv[2], "two words") ||
       envp != environ || argv != __argv || !getenv("I276") ||

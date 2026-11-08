@@ -110,8 +110,9 @@ SECTIONS
            ".fini_array!*" ".fini_array.*!" ".gcc_except_table!*"))
   } > metadata
 
-  .bss ALIGN(ADDR(.data) + SIZEOF(.data), 2) (NOLOAD)
-       : AT(__dgroup + ALIGN(ADDR(.data) + SIZEOF(.data), 2))
+  /* Let LLD align the output section to the strictest BSS/COMMON input.
+     Its load address must retain the same offset within DGROUP. */
+  .bss (NOLOAD) : AT(__dgroup + ADDR(.bss))
   {
     __sbss = .;
     *(.bss .bss.* .sbss .sbss.* .lbss .lbss.*)
