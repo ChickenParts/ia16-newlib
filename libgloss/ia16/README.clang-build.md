@@ -69,6 +69,16 @@ use LLD's native `--oformat=mz` writer so far code and data pointers receive
 DOS loader relocation entries. The existing GCC linker scripts remain
 unchanged.
 
+Every model's linker script defines the absolute symbol
+`__msdos_initial_alloc_paras`, in 16-byte DOS paragraphs measured from the PSP.
+For MZ models it covers the PSP and the entire resident code/data/BSS/stack
+extent, including far segments and any explicit `__stack_size`. It equals
+`__ia16_resident_paragraphs`, which compact/large startup already uses to resize
+the initial block. Small/medium programs can pass the symbol's numeric address
+to DOS AH=4Ah before EXEC without discarding resident storage. This is the
+minimum resident reservation, not a measurement of the larger block DOS may
+have granted initially. Tiny retains its existing 0x1000-paragraph reservation.
+
 Run the maintained acceptance harness after building the sysroots. It generates
 a Ninja graph for each model, links the same object with both Clang and direct
 `ld.lld`, and checks both guest receipts in DOSBox Staging's 386 CPU model using

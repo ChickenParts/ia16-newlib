@@ -135,4 +135,9 @@ SECTIONS
   _end = __stack_end;
   __ia16_resident_paragraphs =
       (LOADADDR(.stack) + SIZEOF(.stack) + 15) / 16 + 0x10;
+  /* Paragraph count from the PSP through the resident image, BSS and stack.
+     Near-data programs can pass this to DOS AH=4Ah before EXEC; far-data
+     startup already resizes to the same resident extent. This is the minimum
+     reservation, not the possibly larger block initially granted by DOS. */
+  __msdos_initial_alloc_paras = __ia16_resident_paragraphs;
 }

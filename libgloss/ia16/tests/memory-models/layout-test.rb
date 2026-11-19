@@ -48,6 +48,37 @@ class IA16SegmentPackingTest < Minitest::Test
    assert_equal 0, vma % 4, 'datum VMA'
    assert_equal 0, lma % 4, 'datum LMA'
   end
+  def test_initial_allocation_symbol_matches_the_mz_loader_minimum
+    %w[small medium compact large].each do |model|
+      [nil, 0x800].each do |stack_size|
+        File.write(File.join(@dir, 'input.c'), <<~C)
+          extern const char __msdos_initial_alloc_paras[];
+          volatile unsigned char data[32] = {1};
+          volatile unsigned char bss[32];
+          #{'volatile unsigned char far_payload[0x9000] = {1};' if %w[compact large].include?(model)}
+          unsigned short _start(void) {
+            bss[0] = data[0];
+            return (unsigned short)__msdos_initial_alloc_paras;
+          }
+        C
+        run_command(TOOLS / 'clang', '--target=ia16-pc-msdos', '-march=8086',
+          "-mmemory-model=#{model}", '-ffreestanding', '-c', 'input.c', '-o', 'input.o')
+        flags = stack_size ? ["--defsym=__stack_size=#{stack_size}"] : []
+        run_command(TOOLS / 'ld.lld', '-m', 'elf_ia16', '--oformat=mz',
+          '-T', 'dos.ld', *flags, 'input.o', '-o', 'output.exe')
+        run_command(TOOLS / 'ld.lld', '-m', 'elf_ia16', '--no-check-sections', '-T', 'dos.ld',
+          *flags, 'input.o', '-o', 'output.elf')
+        symbols, = run_command(TOOLS / 'llvm-nm', '--defined-only', 'output.elf')
+        symbol = symbols.match(/^(\h+) A __msdos_initial_alloc_paras$/)
+        refute_nil symbol, "#{model}: allocation must be an absolute paragraph count"
+        header = File.binread(File.join(@dir, 'output.exe'), 28).unpack('v14')
+        initialized_bytes = File.size(File.join(@dir, 'output.exe')) - header[4] * 16
+        required_paragraphs = 0x10 + (initialized_bytes + 15) / 16 + header[5]
+        assert_equal required_paragraphs, symbol[1].to_i(16),
+          "#{model}/#{stack_size || 'default'}: must retain PSP, image, BSS and stack"
+      end
+    end
+  end
 def test_far_data_models_align_near_bss_and_common_in_dgroup
   %w[compact large].each do |model|
     [4, 8, 16].each do |alignment|
