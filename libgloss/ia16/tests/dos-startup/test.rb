@@ -40,6 +40,11 @@ class IA16DOSStartupSourceTest < Minitest::Test
                  'refusal must terminate with status 255')
     continuation = source.index('.Lia16_startup_continue:')
     successful_preflight = source[preflight...continuation]
+    environment_scan = successful_preflight[
+      successful_preflight.index('.Lia16_env_byte:')...successful_preflight.index('.Lia16_env_done:')]
+    assert_match(/cmpw\s+\$1,\s*%di[\s\S]*?cmpb\s+\$0,\s*%es:\(%di\)[\s\S]*?IA16_STARTUP_FAIL_IF\s+jne/,
+                 environment_scan,
+                 'only a double NUL at offset zero is a valid empty environment')
     assert_match(/movw\s+%ds,\s*%ax[\s\S]*?movw\s+%ax,\s*%es/,
                  successful_preflight,
                  'successful preflight must restore ES to the PSP before tiny MCB resize')
@@ -65,6 +70,17 @@ class IA16DOSStartupSourceTest < Minitest::Test
       assert_includes script, '__ia16_startup_stack_floor'
       assert_includes script, '__ia16_startup_entry_stack_reserve'
       assert_includes script, '__ia16_startup_stack_reserve'
+    end
+    assert_match(/PROVIDE\(__ia16_startup_stack_floor\s*=\s*__heap_end_minimum\)/,
+                 tiny,
+                 'tiny startup floor must follow the minimum heap end')
+    assert_match(/PROVIDE\(__ia16_startup_stack_floor\s*=\s*__stack_start\)/,
+                 mz_script,
+                 'MZ startup floor must follow the linker stack start')
+    [tiny, mz_script].each do |script|
+      assert_match(/PROVIDE\(__ia16_startup_stack_reserve\s*=\s*0x400\)/,
+                   script,
+                   'default stack reserve must remain 1KB')
     end
     assert_match(/PROVIDE\(__ia16_startup_stack_top\s*=\s*0\);/, mz_script,
                  'MZ uses the 16-bit zero encoding for its 64KB stack top')

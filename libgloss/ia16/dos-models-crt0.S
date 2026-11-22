@@ -143,7 +143,11 @@ _start:
 	jnz	.Lia16_env_done
 	movb	$1, %bh
 	cmpw	$1, %di
-	je	.Lia16_env_byte
+	jne	.Lia16_env_noninitial_empty
+	cmpb	$0, %es:(%di)
+	IA16_STARTUP_FAIL_IF jne
+	jmp	.Lia16_env_byte
+.Lia16_env_noninitial_empty:
 	incb	%bl
 	cmpb	$128, %bl
 	IA16_STARTUP_FAIL_IF ja
