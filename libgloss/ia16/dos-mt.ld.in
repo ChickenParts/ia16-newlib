@@ -118,7 +118,7 @@ SECTIONS
 		*(.rodata) *(.rodata.*)
 EPART1
 "`dirname "$0"`"/autofloat.ld.in
-cat <<'EPART2'
+cat <<'EPART2A'
 		*(.data) *(.data.*)
 		*(.gcc_except_table)
 		__edata = .;
@@ -133,6 +133,25 @@ cat <<'EPART2'
                 /* Minimum address allowed for sbrk() to use.  */
                 __heap_end_minimum = ALIGN(8);
 	}
+EPART2A
+if [ "${clang_runtime:-no}" = yes ] && [ "$w3" = without ]; then
+cat <<'EPARTCLANG'
+
+/* Clang's checked startup uses the end of static data as its COM stack floor.
+   Keep these defaults out of the GCC DOS CRT. */
+PROVIDE(__ia16_startup_stack_floor = __heap_end_minimum);
+PROVIDE(__ia16_startup_stack_top = 0xfffe);
+PROVIDE(__ia16_startup_entry_stack_reserve = 0x80);
+PROVIDE(__ia16_startup_stack_reserve = 0x400);
+ASSERT(__ia16_startup_entry_stack_reserve <= 0xffff,
+       "Error: DOS startup entry stack reserve exceeds 64KB.")
+ASSERT(__ia16_startup_stack_reserve <= 0xffff,
+       "Error: DOS startup stack reserve exceeds 64KB.")
+ASSERT(__ia16_startup_stack_floor + __ia16_startup_entry_stack_reserve <= 0xfffe,
+       "Error: tiny DOS image leaves no safe entry stack.")
+EPARTCLANG
+fi
+cat <<'EPART2B'
 
 	__ldata = __edata - __sdata;
 	__lbss0 = __ebss - __sbss;
@@ -151,7 +170,7 @@ cat <<'EPART2'
 		KEEP (*(SORT (.tail.*)))
 		KEEP (*(.zip))
 		KEEP (*(SORT (.zip.*)))
-EPART2
+EPART2B
 for x in '' 0 1 2 3 4 5 6 7; do
     cat <<EPART3
 		KEEP (*(.ov$x))

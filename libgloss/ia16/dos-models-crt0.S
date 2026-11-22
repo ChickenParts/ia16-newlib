@@ -41,6 +41,7 @@
     || defined(COMPACT) || defined(LARGE)) && !defined(DOSX) && !defined(TSR) \
     && !defined(__IA16_CALLCVT_REGPARMCALL) && !defined(__IA16_CALLCVT_STDCALL)
 # define IA16_CLANG_INITFINI 1
+# define IA16_CLANG_DOS_PREFLIGHT 1
 #endif
 
 	.global	_start
@@ -57,6 +58,37 @@ _start:
 
 	.section .startupC, "ax"
 
+	# The first DOS interrupt uses the caller's stack.  Check that at least
+	# the configured entry reserve is available before asking DOS anything.
+#ifdef IA16_CLANG_DOS_PREFLIGHT
+.Lia16_startup_entry_check:
+	movw	$__ia16_startup_stack_floor, %ax
+	movw	%sp, %cx
+	testw	%cx, %cx
+	jnz	.Lia16_entry_nonzero_sp
+	testw	%ax, %ax
+	jz	.Lia16_entry_full_segment
+	negw	%ax
+	movw	%ax, %cx
+	jmp	.Lia16_entry_available
+.Lia16_entry_full_segment:
+	movw	$0xffff, %cx
+	jmp	.Lia16_entry_available
+.Lia16_entry_nonzero_sp:
+	cmpw	%ax, %cx
+	jae	.Lia16_entry_above_floor
+	movw	$__ia16_startup_stack_top, %sp
+	jmp	.Lia16_startup_refuse
+.Lia16_entry_above_floor:
+	subw	%ax, %cx
+.Lia16_entry_available:
+	cmpw	$__ia16_startup_entry_stack_reserve, %cx
+	jae	.Lia16_entry_check_done
+	movw	$__ia16_startup_stack_top, %sp
+	jmp	.Lia16_startup_refuse
+.Lia16_entry_check_done:
+#endif
+
 	# Get the MS-DOS version number & see if it is 2 or above.
 #ifndef DOS3P
 	movb	$0x30,	%ah
@@ -69,6 +101,304 @@ _start:
 	# At this point, the flags should contain the result of comparing the
 	# DOS major version number with 2.  dos-mtv1.S & dos-mxv1.S make use
 	# of this.
+#endif
+
+#ifdef IA16_CLANG_DOS_PREFLIGHT
+	# Parse and account for every input before resizing the DOS block, clearing
+	# BSS, copying environment strings or pushing either pointer vector.
+	.macro IA16_STARTUP_FAIL_IF opcode
+	\opcode .Lia16_startup_fail\@
+	jmp .Lia16_startup_safe\@
+.Lia16_startup_fail\@:
+	jmp .Lia16_startup_refuse
+.Lia16_startup_safe\@:
+	.endm
+
+.Lia16_startup_preflight:
+	# The optional DOS 3+ program path follows the environment's double NUL.
+	xorw	%di, %di
+	movw	0x2c, %ax
+	movw	%ax, %es
+	testw	%ax, %ax
+	jnz	.Lia16_env_present
+	# A null environment takes the old four-byte empty-string path.
+	xorw	%bx, %bx
+	xorw	%dx, %dx
+	movb	$1, %bh
+	jmp	.Lia16_path_done
+
+.Lia16_env_present:
+	# BL counts non-empty entries; BH records whether the previous byte was 0.
+	xorw	%bx, %bx
+	xorw	%cx, %cx
+.Lia16_env_byte:
+	cmpw	$4096, %cx
+	IA16_STARTUP_FAIL_IF jae
+	movb	%es:(%di), %al
+	incw	%di
+	incw	%cx
+	testb	%al, %al
+	jnz	.Lia16_env_nonzero
+	testb	%bh, %bh
+	jnz	.Lia16_env_done
+	movb	$1, %bh
+	cmpw	$1, %di
+	je	.Lia16_env_byte
+	incb	%bl
+	cmpb	$128, %bl
+	IA16_STARTUP_FAIL_IF ja
+	jmp	.Lia16_env_byte
+.Lia16_env_nonzero:
+	movb	$0, %bh
+	jmp	.Lia16_env_byte
+.Lia16_env_done:
+	movw	%cx, %dx
+	movb	$0, %bh
+
+	# DOS 2 has no program-name trailer. Reject older/unknown versions rather
+	# than treating a negative version comparison as DOS 3+.
+	testw	%bp, %bp
+	IA16_STARTUP_FAIL_IF js
+	je	.Lia16_no_program_path
+	movw	%di, %ax
+	addw	$2, %ax
+	IA16_STARTUP_FAIL_IF jc
+	movw	%es:(%di), %cx
+	cmpw	$1, %cx
+	IA16_STARTUP_FAIL_IF jne
+	addw	$2, %di
+	movw	$260, %cx
+.Lia16_path_scan:
+	movb	%es:(%di), %al
+	incw	%di
+	decw	%cx
+	testb	%al, %al
+	jz	.Lia16_path_nul
+	testw	%cx, %cx
+	IA16_STARTUP_FAIL_IF jz
+	jmp	.Lia16_path_scan
+.Lia16_path_nul:
+	movw	$260, %ax
+	subw	%cx, %ax
+	addw	$2, %dx
+	IA16_STARTUP_FAIL_IF jc
+	addw	%ax, %dx
+	IA16_STARTUP_FAIL_IF jc
+	jmp	.Lia16_path_done
+
+.Lia16_no_program_path:
+	movb	$0, %bh
+.Lia16_path_done:
+	# Round the bytes copied from the environment segment before charging the
+	# environment vectors.  The null-environment padding is a separate cost.
+	incw	%dx
+	andw	$-2, %dx
+	testb	%bh, %bh
+	je	.Lia16_env_padding_done
+	addw	$4, %dx
+	IA16_STARTUP_FAIL_IF jc
+.Lia16_env_padding_done:
+	xorw	%ax, %ax
+	movb	%bl, %al
+	incw	%ax
+	shlw	$1, %ax
+	addw	%ax, %dx
+	IA16_STARTUP_FAIL_IF jc
+#ifdef __FAR_DATA__
+	shlw	$1, %ax
+	addw	%ax, %dx
+	IA16_STARTUP_FAIL_IF jc
+#endif
+
+	# Validate the PSP length byte and exact CR before interpreting the command
+	# tail.  The parser's 128-byte .Largv buffer also bounds decoded strings.
+	movb	0x80, %al
+	cmpb	$126, %al
+	IA16_STARTUP_FAIL_IF ja
+	movb	%al, %cl
+	xorb	%ch, %ch
+	movw	$0x81, %si
+	movw	%si, %di
+	addw	%cx, %di
+	IA16_STARTUP_FAIL_IF jc
+	cmpb	$13, (%di)
+	IA16_STARTUP_FAIL_IF jne
+	movw	%si, %bx
+.Lia16_tail_validate:
+	cmpw	%di, %bx
+	jae	.Lia16_tail_validated
+	movb	(%bx), %al
+	testb	%al, %al
+	IA16_STARTUP_FAIL_IF jz
+	cmpb	$13, %al
+	IA16_STARTUP_FAIL_IF je
+	incw	%bx
+	jmp	.Lia16_tail_validate
+.Lia16_tail_validated:
+	# Count argc with the same quote and backslash token boundaries as the
+	# copy parser below.  AX/BX/CX/DI/SI are registers only; SP is unchanged.
+	movw	$1, %bx
+.Lia16_tail_space:
+	cmpw	%di, %si
+	jae	.Lia16_tail_done
+	movb	(%si), %al
+	cmpb	$' ', %al
+	je	.Lia16_tail_skip_space
+	cmpb	$9, %al
+	je	.Lia16_tail_skip_space
+	cmpb	$'"', %al
+	je	.Lia16_tail_initial_quote
+	jmp	.Lia16_tail_outside
+.Lia16_tail_skip_space:
+	incw	%si
+	jmp	.Lia16_tail_space
+.Lia16_tail_initial_quote:
+	incw	%si
+	jmp	.Lia16_tail_inside
+.Lia16_tail_inside:
+	cmpw	%di, %si
+	jae	.Lia16_tail_argument_done
+	movb	(%si), %al
+	cmpb	$'"', %al
+	je	.Lia16_tail_quote_done
+	cmpb	$'\\', %al
+	jne	.Lia16_tail_inside_other
+	incw	%si
+	cmpw	%di, %si
+	jae	.Lia16_tail_argument_done
+	incw	%si
+	jmp	.Lia16_tail_inside
+.Lia16_tail_inside_other:
+	incw	%si
+	jmp	.Lia16_tail_inside
+.Lia16_tail_quote_done:
+	incw	%si
+	incw	%bx
+	cmpw	$64, %bx
+	IA16_STARTUP_FAIL_IF ja
+	jmp	.Lia16_tail_space
+.Lia16_tail_outside:
+	cmpw	%di, %si
+	jae	.Lia16_tail_argument_done
+	movb	(%si), %al
+	cmpb	$' ', %al
+	je	.Lia16_tail_delimiter
+	cmpb	$9, %al
+	je	.Lia16_tail_delimiter
+	cmpb	$'"', %al
+	je	.Lia16_tail_outside_quote
+	cmpb	$'\\', %al
+	je	.Lia16_tail_outside_backslash
+	incw	%si
+	jmp	.Lia16_tail_outside
+.Lia16_tail_delimiter:
+	incw	%si
+	incw	%bx
+	cmpw	$64, %bx
+	IA16_STARTUP_FAIL_IF ja
+	jmp	.Lia16_tail_space
+.Lia16_tail_outside_quote:
+	incw	%si
+	incw	%bx
+	cmpw	$64, %bx
+	IA16_STARTUP_FAIL_IF ja
+	jmp	.Lia16_tail_inside
+.Lia16_tail_outside_backslash:
+	incw	%si
+	cmpw	%di, %si
+	jae	.Lia16_tail_argument_done
+	movb	(%si), %al
+	cmpb	$' ', %al
+	je	.Lia16_tail_backslash_space
+	cmpb	$9, %al
+	je	.Lia16_tail_backslash_space
+	incw	%si
+	jmp	.Lia16_tail_outside
+.Lia16_tail_backslash_space:
+	incw	%si
+	incw	%bx
+	cmpw	$64, %bx
+	IA16_STARTUP_FAIL_IF ja
+	jmp	.Lia16_tail_space
+.Lia16_tail_argument_done:
+	incw	%bx
+	cmpw	$64, %bx
+	IA16_STARTUP_FAIL_IF ja
+.Lia16_tail_done:
+	# Each C array retains its near parse vector.  Far-data profiles then add
+	# a second far vector before passing far argv/envp pointers to main.
+	movw	%bx, %ax
+	incw	%ax
+	shlw	$1, %ax
+	addw	%ax, %dx
+	IA16_STARTUP_FAIL_IF jc
+#ifdef __FAR_DATA__
+	shlw	$1, %ax
+	addw	%ax, %dx
+	IA16_STARTUP_FAIL_IF jc
+	addw	$10, %dx
+#else
+	addw	$6, %dx
+#endif
+	IA16_STARTUP_FAIL_IF jc
+#if defined(MEDIUM) || defined(LARGE)
+	addw	$4, %dx
+#else
+	addw	$2, %dx
+#endif
+	IA16_STARTUP_FAIL_IF jc
+	addw	$__ia16_startup_stack_reserve, %dx
+	IA16_STARTUP_FAIL_IF jc
+
+	# The MZ header encodes a full 64KB stack top as SP=0.  Treat it as
+	# 0x10000 in 17-bit accounting before comparing the checked 16-bit cost.
+	movw	$__ia16_startup_stack_floor, %ax
+	movw	%sp, %cx
+	testw	%cx, %cx
+	jnz	.Lia16_stack_nonzero_sp
+	testw	%ax, %ax
+	jz	.Lia16_stack_full_segment
+	negw	%ax
+	movw	%ax, %cx
+	jmp	.Lia16_stack_available
+.Lia16_stack_full_segment:
+	movw	$0xffff, %cx
+	jmp	.Lia16_stack_available
+.Lia16_stack_nonzero_sp:
+	cmpw	%ax, %cx
+	IA16_STARTUP_FAIL_IF jb
+	subw	%ax, %cx
+.Lia16_stack_available:
+	cmpw	%dx, %cx
+	IA16_STARTUP_FAIL_IF jb
+
+	# Recreate the flags from the DOS-major-version comparison for the legacy
+	# startup fragments which follow this common path.
+	movw	%bp, %ax
+	addb	$2, %al
+	cmpb	$2, %al
+	# Restore the PSP segment for the tiny DOS AH=4Ah block resize below.
+	movw	%ds, %ax
+	movw	%ax, %es
+	jmp	.Lia16_startup_continue
+
+.Lia16_startup_refuse:
+	movw	%ss, %ax
+	movw	%ax, %ds
+	movw	$.Lia16_startup_refuse_msg, %dx
+	movb	$9, %ah
+	int	$0x21
+	movw	$0x4cff, %ax
+	int	$0x21
+	hlt
+	jmp	.
+.Lia16_startup_refuse_msg:
+	.pushsection .msdos_init_rodata, "a"
+	.ascii	"No room$"
+	.balign	2
+	.popsection
+.Lia16_startup_continue:
+	.purgem IA16_STARTUP_FAIL_IF
 #endif
 
 	.section .startupD, "ax"
@@ -93,6 +423,9 @@ _start:
 	movw	$__msdos_initial_alloc_paras, %bx
 	int	$0x21
 	jnc	.Lmcb_ok
+#ifdef IA16_CLANG_DOS_PREFLIGHT
+	jmp	.Lia16_startup_refuse
+#else
 .Lno_room:
 	movw	$.Lno_room_msg, %dx
 	.global	__msdos_crt_bail
@@ -106,6 +439,7 @@ __msdos_crt_bail:
 	.ascii	"No room$"
 	.balign	2
 	.popsection
+#endif
 .Lmcb_ok:
 #endif
 #if defined(__clang__) && defined(__FAR_DATA__)
@@ -117,8 +451,7 @@ __msdos_crt_bail:
 	movb $0x4a, %ah
 	int $0x21
 	jnc .Lfar_resident_ok
-	movw $0x4cff, %ax
-	int $0x21
+	jmp .Lia16_startup_refuse
 .Lfar_resident_ok:
 #endif
 #ifndef TINY

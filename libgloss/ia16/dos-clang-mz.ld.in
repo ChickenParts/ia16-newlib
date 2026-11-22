@@ -132,6 +132,17 @@ SECTIONS
   } > near_data
   ASSERT(__stack_end <= 0x10000,
          "Error: DOS DGROUP plus stack exceeds 64KB.")
+  PROVIDE(__ia16_startup_stack_floor = __stack_start);
+  /* DOS MZ encodes a full 64KB stack top as the 16-bit offset zero. */
+  PROVIDE(__ia16_startup_stack_top = 0);
+  PROVIDE(__ia16_startup_entry_stack_reserve = 0x80);
+  PROVIDE(__ia16_startup_stack_reserve = 0x400);
+  ASSERT(__ia16_startup_entry_stack_reserve <= 0xffff,
+         "Error: DOS startup entry stack reserve exceeds 64KB.")
+  ASSERT(__ia16_startup_stack_reserve <= 0xffff,
+         "Error: DOS startup stack reserve exceeds 64KB.")
+  ASSERT(__stack_end - __stack_start >= __ia16_startup_entry_stack_reserve,
+         "Error: DOS MZ image leaves no safe entry stack.")
   _end = __stack_end;
   __ia16_resident_paragraphs =
       (LOADADDR(.stack) + SIZEOF(.stack) + 15) / 16 + 0x10;
