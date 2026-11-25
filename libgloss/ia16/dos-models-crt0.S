@@ -77,15 +77,13 @@ _start:
 .Lia16_entry_nonzero_sp:
 	cmpw	%ax, %cx
 	jae	.Lia16_entry_above_floor
-	movw	$__ia16_startup_stack_top, %sp
-	jmp	.Lia16_startup_refuse
+	jmp	.Lia16_startup_entry_refuse
 .Lia16_entry_above_floor:
 	subw	%ax, %cx
 .Lia16_entry_available:
 	cmpw	$__ia16_startup_entry_stack_reserve, %cx
 	jae	.Lia16_entry_check_done
-	movw	$__ia16_startup_stack_top, %sp
-	jmp	.Lia16_startup_refuse
+	jmp	.Lia16_startup_entry_refuse
 .Lia16_entry_check_done:
 #endif
 
@@ -386,9 +384,20 @@ _start:
 	movw	%ax, %es
 	jmp	.Lia16_startup_continue
 
+.Lia16_startup_entry_refuse:
+	# A COM loader can supply a smaller allocation than the link-time
+	# stack top. Use stack space inside the loaded image if the incoming
+	# stack is too small even for a DOS interrupt.
+	movw	%ss, %ax
+	movw	%ax, %ds
+	movw	%cs, %ax
+	movw	%ax, %ss
+	movw	$.Lia16_startup_refusal_stack_end, %sp
+	jmp	.Lia16_startup_report_refusal
 .Lia16_startup_refuse:
 	movw	%ss, %ax
 	movw	%ax, %ds
+.Lia16_startup_report_refusal:
 	movw	$.Lia16_startup_refuse_msg, %dx
 	movb	$9, %ah
 	int	$0x21
@@ -396,8 +405,11 @@ _start:
 	int	$0x21
 	hlt
 	jmp	.
-.Lia16_startup_refuse_msg:
+	.balign 2
+	.space	128
+.Lia16_startup_refusal_stack_end:
 	.pushsection .msdos_init_rodata, "a"
+.Lia16_startup_refuse_msg:
 	.ascii	"No room$"
 	.balign	2
 	.popsection
